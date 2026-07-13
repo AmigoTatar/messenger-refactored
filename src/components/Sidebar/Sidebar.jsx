@@ -25,6 +25,7 @@ export default function Sidebar({
   user,
   onUpdateUser,
   formatMsgTime,
+  groupChatsVersion,
 }) {
   const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
   const [isNewGroupOpen, setIsNewGroupOpen] = useState(false);
@@ -73,6 +74,7 @@ export default function Sidebar({
           unreadCounts={unreadCounts}
           onSelectChat={onSelectChat}
           formatMsgTime={formatMsgTime}
+          groupChatsVersion={groupChatsVersion}
         />
       </div>
 

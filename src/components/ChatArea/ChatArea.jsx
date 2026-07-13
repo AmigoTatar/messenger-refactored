@@ -179,10 +179,10 @@ export default function ChatArea({
   return (
   <div className="flex-col flex-1 h-full bg-zinc-100 dark:bg-zinc-900">
     {!activeChatId ? (
-      <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 p-4 text-center bg-zinc-100 dark:bg-zinc-900">
-        <span className="text-4xl mb-2">💬</span>
-        <p className="text-sm">Выберите чат, чтобы начать общение</p>
-      </div>
+       <div className="hidden md:flex flex-1 flex-col items-center justify-center text-zinc-500 p-4 text-center bg-zinc-100 dark:bg-zinc-900">
+    <span className="text-4xl mb-2">💬</span>
+    <p className="text-sm">Выберите чат, чтобы начать общение</p>
+  </div>
     ) : (
       // ✅ Добавляем обёртку flex flex-col h-full
       <div className="flex flex-col h-full">

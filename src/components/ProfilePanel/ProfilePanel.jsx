@@ -113,6 +113,7 @@ const getNumericId = (chatId) => {
     };
     fetchUsers();
   }, [showAddMember, members]);
+  
 
   // ==============================================
   // Переключение "Не беспокоить"
@@ -258,7 +259,7 @@ const handleDeleteChat = async () => {
 
   const isCreator = activeChat.creatorId === currentUserId;
 
-  
+  console.log('🔍 ProfilePanel: activeChat.creatorId=', activeChat?.creatorId, 'currentUserId=', currentUserId, 'isCreator=', isCreator)
 
   return (
     <div className="w-80 h-full border-l flex flex-col animate-fade-in fixed right-0 top-0 z-50 md:relative md:z-0 shadow-2xl md:shadow-none bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">

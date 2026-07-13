@@ -2,7 +2,14 @@
 import React from 'react';
 import ChatListItem from './ChatListItem';
 
-export default function GroupList({ groupChats, activeChatId, unreadCounts, onSelectChat, formatMsgTime }) {
+export default function GroupList({ 
+  groupChats, 
+  activeChatId, 
+  unreadCounts, 
+  onSelectChat, 
+  formatMsgTime,
+  groupChatsVersion  // ← ДОБАВЛЯЕМ ПРОПС
+}) {
   if (!groupChats || groupChats.length === 0) return null;
 
   return (
@@ -17,7 +24,7 @@ export default function GroupList({ groupChats, activeChatId, unreadCounts, onSe
         const unreadCount = unreadCounts[chatId] || 0;
         return (
           <ChatListItem
-            key={chatId}
+            key={`${chatId}-${groupChatsVersion}`} // ← ИСПОЛЬЗУЕМ ВЕРСИЮ В КЛЮЧЕ
             id={chatId}
             name={chat.name}
             avatar={chat.avatar}
