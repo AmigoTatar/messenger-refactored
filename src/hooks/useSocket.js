@@ -62,10 +62,13 @@ export function useSocket(user, eventHandlers) {
   }, []);
 
   const joinChat = useCallback((chatId) => {
-    if (socketRef.current && chatId) {
-      socketRef.current.emit('join_chat', chatId);
-    }
-  }, []);
+  if (!socketRef.current) {
+    console.warn('⚠️ joinChat: сокет отсутствует');
+    return;
+  }
+  console.log('📡 joinChat: отправляю join_chat для', chatId);
+  socketRef.current.emit('join_chat', chatId);
+}, []);
 
   const sendMessage = useCallback((messageData) => {
     if (socketRef.current) {

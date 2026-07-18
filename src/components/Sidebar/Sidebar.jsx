@@ -1,4 +1,3 @@
-// src/components/Sidebar/Sidebar.jsx
 import React, { useState } from 'react';
 import UserProfile from './UserProfile';
 import PrivateChatList from './PrivateChatList';
@@ -25,8 +24,13 @@ export default function Sidebar({
   user,
   onUpdateUser,
   formatMsgTime,
+  channelsVersion,
   groupChatsVersion,
+  chatsVersion,
 }) {
+  // ✅ Добавь этот лог для проверки
+  console.log('🔍 Sidebar: onSelectChat =', onSelectChat);
+
   const [isNewChannelOpen, setIsNewChannelOpen] = useState(false);
   const [isNewGroupOpen, setIsNewGroupOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -60,9 +64,11 @@ export default function Sidebar({
           unreadCounts={unreadCounts}
           onSelectChat={onSelectChat}
           formatMsgTime={formatMsgTime}
+          chatsVersion={chatsVersion}
         />
         <ChannelList
           channels={channels}
+          channelsVersion={channelsVersion}
           activeChatId={activeChatId}
           unreadCounts={unreadCounts}
           onSelectChat={onSelectChat}

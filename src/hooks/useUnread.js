@@ -27,8 +27,13 @@ export function useUnread(user) {
   }, []);
 
   const resetUnread = useCallback((chatKey) => {
-    setUnreadCounts(prev => ({ ...prev, [chatKey]: 0 }));
-  }, []);
+  console.log('🔄 resetUnread для', chatKey);
+  setUnreadCounts(prev => {
+    const newState = { ...prev, [chatKey]: 0 };
+    console.log('📊 Новые unreadCounts:', newState);
+    return newState;
+  });
+}, []);
 
   return { unreadCounts, fetchUnread, updateUnread, resetUnread };
 }

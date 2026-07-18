@@ -2,7 +2,14 @@
 import React from 'react';
 import ChatListItem from './ChatListItem';
 
-export default function PrivateChatList({ chats, activeChatId, unreadCounts, onSelectChat, formatMsgTime }) {
+export default function PrivateChatList({ 
+  chats, 
+  activeChatId, 
+  unreadCounts, 
+  onSelectChat, 
+  formatMsgTime,
+  chatsVersion  // ← добавить пропс
+}) {
   const privateChats = chats?.filter(chat => chat.id !== 'chat_general' && chat.id !== 'general') || [];
 
   if (privateChats.length === 0) return null;
@@ -19,7 +26,7 @@ export default function PrivateChatList({ chats, activeChatId, unreadCounts, onS
         const unreadCount = unreadCounts[chatId] || 0;
         return (
           <ChatListItem
-            key={chatId}
+            key={`${chatId}-${chatsVersion}`} // ← добавить chatsVersion
             id={chatId}
             name={chat.name}
             avatar={chat.avatar}

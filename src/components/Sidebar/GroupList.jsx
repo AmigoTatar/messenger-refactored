@@ -1,4 +1,3 @@
-// src/components/Sidebar/GroupList.jsx
 import React from 'react';
 import ChatListItem from './ChatListItem';
 
@@ -9,8 +8,11 @@ export default function GroupList({
   onSelectChat, 
   formatMsgTime,
   groupChatsVersion  // ← ДОБАВЛЯЕМ ПРОПС
+  
 }) {
+  console.log('🔍 GroupList рендерится, version:', groupChatsVersion, 'groups:', groupChats.length);
   if (!groupChats || groupChats.length === 0) return null;
+  
 
   return (
     <>
@@ -24,7 +26,7 @@ export default function GroupList({
         const unreadCount = unreadCounts[chatId] || 0;
         return (
           <ChatListItem
-            key={`${chatId}-${groupChatsVersion}`} // ← ИСПОЛЬЗУЕМ ВЕРСИЮ В КЛЮЧЕ
+            key={`group-${chat.id}-${groupChatsVersion}`} 
             id={chatId}
             name={chat.name}
             avatar={chat.avatar}

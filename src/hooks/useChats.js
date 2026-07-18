@@ -55,13 +55,14 @@ export function useChats(user) {
   });
 }, [setChannels]);
 
-  const addGroupChat = useCallback((chat) => {
-    setGroupChats(prev => {
-      const normalized = { ...chat, id: `chat_${chat.id}`, dbId: chat.id };
-      if (prev.some(c => c.id === normalized.id)) return prev;
-      return [...prev, normalized];
-    });
-  }, []);
+ const addGroupChat = useCallback((chat) => {
+  setGroupChats(prev => {
+    // Проверяем, есть ли уже группа с таким id
+    const exists = prev.some(c => c.id === chat.id || c.dbId === chat.dbId);
+    if (exists) return prev;
+    return [...prev, chat];
+  });
+}, [setGroupChats]);
 
   const removeChannel = useCallback((channelId) => {
     setChannels(prev => prev.filter(ch => ch.id !== channelId));

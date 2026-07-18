@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import ChatHeader from './ChatHeader';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
@@ -56,6 +56,7 @@ export default function ChatArea({
 
   const [editingMessage, setEditingMessage] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
+  const [localTypingUser, setLocalTypingUser] = useState(null);
 
   // ==============================================
   // 🎯 ОБРАБОТЧИКИ ДЛЯ КОНТЕКСТНОГО МЕНЮ
@@ -78,58 +79,148 @@ export default function ChatArea({
   };
 
   const handleForwardSend = (targetChatId, msg) => {
-    if (socketRef?.current) {
-      socketRef.current.emit('send_message', {
-        text: msg.text || '📤 Пересланное сообщение',
-        mediaUrl: msg.mediaUrl || null,
-        mediaType: msg.mediaType || null,
-        activeChatId: targetChatId,
-        isForwarded: true,
-      });
-      if (typeof onSelectChat === 'function') {
-        onSelectChat(targetChatId);
-      }
+  console.log('📤 Пересылка в чат:', targetChatId, 'Сообщение:', msg);
+  if (socketRef?.current) {
+    socketRef.current.emit('send_message', {
+      text: msg.text || '📤 Пересланное сообщение',
+      mediaUrl: msg.mediaUrl || null,
+      mediaType: msg.mediaType || null,
+      activeChatId: targetChatId,
+      isForwarded: true,
+    });
+    console.log('✅ Переслано через сокет');
+    if (typeof onSelectChat === 'function') {
+      onSelectChat(targetChatId);
+    } else {
+      console.warn('onSelectChat не передан');
     }
-    setForwardModal({ visible: false, message: null });
-  };
+  } else {
+    console.error('socketRef отсутствует');
+  }
+  setForwardModal({ visible: false, message: null });
+};
 
   const handlePin = async (messageId) => {
-    console.log('📌 Закрепление:', messageId);
-    if (onPinMessage) onPinMessage(messageId);
-  };
+  console.log('📌 Закрепление:', messageId);
+  // Если messageId — объект, берём id
+  const id = typeof messageId === 'object' ? messageId.id : messageId;
+  if (onPinMessage) onPinMessage(id);
+};
 
   const handleDelete = (messageId) => {
     if (onDeleteMessage) onDeleteMessage(messageId);
   };
 
-  const handleReaction = async (messageId, emoji) => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}/reactions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ type: emoji }),
-      });
-      if (!response.ok) {
-        if (response.status === 429) {
-          alert('❌ Слишком много реакций, подождите');
-          return;
-        }
-        throw new Error('Ошибка');
-      }
-      const data = await response.json();
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === messageId ? { ...m, reactions: data.reactions } : m
-        )
-      );
-    } catch (error) {
-      console.error('Ошибка реакции:', error);
-    }
+
+// ==============================================
+// 📝 СТАТУС "ПЕЧАТАЕТ..."
+// ==============================================
+useEffect(() => {
+  if (!socketRef || !socketRef.connected) {
+    console.log('⚠️ socket отсутствует или не подключён, подписка на typing не выполнена');
+    return;
+  }
+
+  const handleTyping = (data) => {
+    console.log('📝 handleTyping получен:', data);
+    if (Number(data.senderId) === Number(currentUserId)) return;
+    if (data.activeChatId !== activeChatId) return;
+    setLocalTypingUser(data);
   };
+
+  const handleStopTyping = (data) => {
+    console.log('📝 handleStopTyping получен:', data);
+    if (data.activeChatId !== activeChatId) return;
+    setLocalTypingUser(null);
+  };
+
+  socketRef.on('typing', handleTyping);
+  socketRef.on('stop_typing', handleStopTyping);
+
+  return () => {
+    socketRef.off('typing', handleTyping);
+    socketRef.off('stop_typing', handleStopTyping);
+  };
+}, [socketRef, currentUserId, activeChatId]); // ← зависимость socketRef
+
+// ==============================================
+// 🎯 ОБРАБОТЧИКИ ДЛЯ КОНТЕКСТНОГО МЕНЮ (исправленные)
+// ==============================================
+
+const handleReaction = async (messageId, emoji) => {
+  try {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}/reactions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ type: emoji }),
+    });
+    if (!response.ok) {
+      if (response.status === 429) {
+        alert('❌ Слишком много реакций, подождите');
+        return;
+      }
+      throw new Error('Ошибка');
+    }
+    const data = await response.json();
+    if (setMessages && activeChatId) {
+      setMessages(prev => {
+        const newState = { ...prev };
+        const chatMessages = newState[activeChatId] || [];
+        // ✅ ТОЛЬКО ОБНОВЛЯЕМ РЕАКЦИИ, НЕ ТРОГАЕМ ТЕКСТ!
+        newState[activeChatId] = chatMessages.map(m =>
+          m.id === messageId ? { ...m, reactions: data.reactions } : m
+        );
+        return newState;
+      });
+    } else {
+      console.warn('setMessages или activeChatId не определены');
+    }
+  } catch (error) {
+    console.error('Ошибка реакции:', error);
+  }
+};
+
+const handleEditSave = async (messageId, newText) => {
+  try {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_BASE_URL}/api/messages/${messageId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: newText }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Ошибка редактирования');
+    }
+    const data = await response.json();
+    console.log('✅ Редактирование успешно, ответ сервера:', data);
+    // Обновляем локальный стейт
+    if (setMessages && activeChatId) {
+      setMessages(prev => {
+        const newState = { ...prev };
+        const chatMessages = newState[activeChatId] || [];
+        newState[activeChatId] = chatMessages.map(m =>
+          m.id === messageId ? { ...m, text: data.text || newText, edited: true } : m
+        );
+        return newState;
+      });
+      setEditingMessage(null);
+    } else {
+      console.warn('setMessages или activeChatId не определены');
+    }
+  } catch (error) {
+    console.error('❌ Ошибка редактирования:', error);
+    alert('Не удалось отредактировать сообщение: ' + error.message);
+  }
+};
+
 
   const closeContextMenu = () => {
     setContextMenu({ visible: false, x: 0, y: 0, message: null });
@@ -145,11 +236,15 @@ export default function ChatArea({
     });
   };
 
-  // Проверка, можно ли писать в канал (только админы)
-  const isReadOnly = activeChatData?.type === 'channel' 
-  ? (activeChatData?.creatorId !== Number(currentUserId) &&
-     !activeChatData?.members?.some(m => m.userId === Number(currentUserId) && m.role === 'admin'))
-  : false;
+  
+// Проверка, можно ли писать в канал (только админы и создатель)
+const isReadOnly = activeChatData?.type === 'channel' && (
+  activeChatData?.creatorId !== Number(currentUserId) &&
+  !(activeChatData?.members || []).some(m => m.userId === Number(currentUserId) && m.role === 'admin')
+);
+const isTypingVisible = localTypingUser !== null && activeChatData?.type !== 'channel';
+
+console.log('🔍 isReadOnly:', isReadOnly, 'activeChatData:', activeChatData);
 
   // Заглушки для недостающих функций
   const pinnedMessages = [];
@@ -176,14 +271,15 @@ export default function ChatArea({
   return 'Чат';
 };
 
+
   return (
   <div className="flex-col flex-1 h-full bg-zinc-100 dark:bg-zinc-900">
     {!activeChatId ? (
-       <div className="hidden md:flex flex-1 flex-col items-center justify-center text-zinc-500 p-4 text-center bg-zinc-100 dark:bg-zinc-900">
-    <span className="text-4xl mb-2">💬</span>
-    <p className="text-sm">Выберите чат, чтобы начать общение</p>
-  </div>
-    ) : (
+  <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 p-4 text-center bg-white dark:bg-zinc-900">
+  <span className="text-4xl mb-2">💬</span>
+  <p className="text-sm">Выберите чат, чтобы начать общение</p>
+</div>
+) : (
       // ✅ Добавляем обёртку flex flex-col h-full
       <div className="flex flex-col h-full">
         <ChatHeader
@@ -191,7 +287,7 @@ export default function ChatArea({
           chatAvatar={activeChatData?.avatar}
           chatType={activeChatData?.type}
           isOnline={activeChatData?.isOnline}
-          isTyping={false}
+          isTyping={isTypingVisible}
           isDataLoading={!activeChatData && activeChatId !== 'chat_general'}
           pinnedCount={pinnedMessages?.length || 0}
           onToggleProfile={onToggleProfile}
@@ -216,13 +312,15 @@ export default function ChatArea({
         />
 
         <MessageInput
-          activeChatId={activeChatId}
-          socketRef={socketRef}
-          isChannelReadOnly={isReadOnly}
-          currentUserId={currentUserId}
-          activeChatData={activeChatData}
-          apiBaseUrl={apiBaseUrl}
-        />
+  activeChatId={activeChatId}
+  socketRef={socketRef}
+  isChannelReadOnly={isReadOnly}
+  currentUserId={currentUserId}
+  activeChatData={activeChatData}
+  apiBaseUrl={apiBaseUrl}
+  replyingTo={replyingTo}
+  setReplyingTo={setReplyingTo}
+/>
 
         {/* Контекстное меню */}
         {contextMenu.visible && (
@@ -264,7 +362,7 @@ export default function ChatArea({
         {editingMessage && (
           <EditModal
             message={editingMessage}
-            onSave={onSave}
+            onSave={handleEditSave} 
             onClose={() => setEditingMessage(null)}
           />
         )}

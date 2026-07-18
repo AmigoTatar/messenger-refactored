@@ -2,7 +2,14 @@
 import React from 'react';
 import ChatListItem from './ChatListItem';
 
-export default function ChannelList({ channels, activeChatId, unreadCounts, onSelectChat, formatMsgTime }) {
+export default function ChannelList({ 
+  channels, 
+  activeChatId, 
+  unreadCounts, 
+  onSelectChat, 
+  formatMsgTime,
+  channelsVersion 
+}) {
   if (!channels || channels.length === 0) return null;
 
   return (
@@ -17,7 +24,7 @@ export default function ChannelList({ channels, activeChatId, unreadCounts, onSe
         const unreadCount = unreadCounts[chatId] || 0;
         return (
           <ChatListItem
-            key={`channel-${channel.id}`} 
+            key={`${chatId}-${channelsVersion}`}
             id={chatId}
             name={channel.name}
             avatar={channel.avatar}
@@ -25,7 +32,13 @@ export default function ChannelList({ channels, activeChatId, unreadCounts, onSe
             unreadCount={unreadCount}
             isActive={chatId === activeChatId}
             isMuted={channel.muted}
-            onClick={() => onSelectChat(chatId)}
+            onClick={() => {
+              if (typeof onSelectChat === 'function') {
+                onSelectChat(chatId);
+              } else {
+                console.error('❌ ChannelList: onSelectChat не является функцией! Невозможно переключить канал.');
+              }
+            }}
             formatMsgTime={formatMsgTime}
             type="channel"
           />
