@@ -9,6 +9,7 @@ export default function ChatHeader({
   isTyping, 
   isDataLoading,
   pinnedCount,
+  onTogglePinned,
   onToggleProfile,
   onBack 
 }) {
@@ -60,14 +61,14 @@ export default function ChatHeader({
           </span>
 
           {pinnedCount > 0 && (
-            <button
-              onClick={() => {/* открыть список закреплённых */}}
-              className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full hover:bg-amber-200 dark:hover:bg-amber-900/50 transition flex items-center gap-1"
-            >
-              <span>📌</span>
-              <span>{pinnedCount}</span>
-            </button>
-          )}
+  <button
+    onClick={onTogglePinned}
+    className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full hover:bg-amber-200 dark:hover:bg-amber-900/50 transition flex items-center gap-1"
+  >
+    <span>📌</span>
+    <span>{pinnedCount}</span>
+  </button>
+)}
         </div>
       </div>
       

@@ -58,6 +58,9 @@ export default function ChatArea({
   const [replyingTo, setReplyingTo] = useState(null);
   const [localTypingUser, setLocalTypingUser] = useState(null);
 
+
+  
+
   // ==============================================
   // 🎯 ОБРАБОТЧИКИ ДЛЯ КОНТЕКСТНОГО МЕНЮ
   // ==============================================
@@ -77,11 +80,23 @@ export default function ChatArea({
   const handleForward = (msg) => {
     setForwardModal({ visible: true, message: msg });
   };
-
-  const handleForwardSend = (targetChatId, msg) => {
+const handleForwardSend = (targetChatId, msg) => {
   console.log('📤 Пересылка в чат:', targetChatId, 'Сообщение:', msg);
-  if (socketRef?.current) {
-    socketRef.current.emit('send_message', {
+  // Проверяем, если целевой чат — канал, то проверяем права
+  if (targetChatId.startsWith('channel_')) {
+    const channelId = parseInt(targetChatId.replace('channel_', ''), 10);
+    const channel = channelsProp?.find(c => c.id === channelId);
+    // Проверяем, что пользователь — админ или создатель
+    const isAdmin = channel?.creatorId === currentUserId || 
+                    channel?.members?.some(m => m.userId === currentUserId && m.role === 'admin');
+    if (!isAdmin) {
+      alert('❌ Только администраторы могут отправлять сообщения в канал');
+      return;
+    }
+  }
+  
+  if (socketRef) {
+    socketRef.emit('send_message', {
       text: msg.text || '📤 Пересланное сообщение',
       mediaUrl: msg.mediaUrl || null,
       mediaType: msg.mediaType || null,
@@ -111,7 +126,41 @@ export default function ChatArea({
     if (onDeleteMessage) onDeleteMessage(messageId);
   };
 
+// ==============================================
+// 📌 ЗАКРЕПЛЁННЫЕ СООБЩЕНИЯ
+// ==============================================
+const [pinnedMessages, setPinnedMessages] = useState([]);
+const [showPinnedList, setShowPinnedList] = useState(false);
+const [pinnedLoading, setPinnedLoading] = useState(false);
 
+const fetchPinnedMessages = useCallback(async () => {
+  if (!activeChatId) return;
+  setPinnedLoading(true);
+  try {
+    const token = localStorage.getItem('token');
+    const params = new URLSearchParams();
+    if (activeChatId.startsWith('channel_')) {
+      params.append('channelId', activeChatId.replace('channel_', ''));
+    } else if (activeChatId.startsWith('chat_')) {
+      params.append('chatId', activeChatId.replace('chat_', ''));
+    } else {
+      setPinnedMessages([]);
+      setPinnedLoading(false);
+      return;
+    }
+    const response = await fetch(`${API_BASE_URL}/api/messages/pinned?${params}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setPinnedMessages(data);
+    }
+  } catch (error) {
+    console.error('Ошибка загрузки закреплённых:', error);
+  } finally {
+    setPinnedLoading(false);
+  }
+}, [activeChatId]);
 // ==============================================
 // 📝 СТАТУС "ПЕЧАТАЕТ..."
 // ==============================================
@@ -221,6 +270,30 @@ const handleEditSave = async (messageId, newText) => {
   }
 };
 
+useEffect(() => {
+  fetchPinnedMessages();
+}, [activeChatId, fetchPinnedMessages]);
+
+useEffect(() => {
+  if (!socketRef) return;
+  const handleMessagePinned = (data) => {
+    // Обновляем список закреплённых при событии
+    fetchPinnedMessages();
+    // Также обновляем локальные сообщения, чтобы показать иконку 📌
+    setMessages(prev => {
+  const newState = { ...prev };
+  const chatMessages = newState[activeChatId] || [];
+  newState[activeChatId] = chatMessages.map(msg =>
+    msg.id === data.messageId ? { ...msg, isPinned: data.isPinned } : msg
+  );
+  return newState;
+});
+  };
+  socketRef.on('message_pinned', handleMessagePinned);
+  return () => {
+    socketRef.off('message_pinned', handleMessagePinned);
+  };
+}, [socketRef, fetchPinnedMessages, setMessages]);
 
   const closeContextMenu = () => {
     setContextMenu({ visible: false, x: 0, y: 0, message: null });
@@ -246,8 +319,21 @@ const isTypingVisible = localTypingUser !== null && activeChatData?.type !== 'ch
 
 console.log('🔍 isReadOnly:', isReadOnly, 'activeChatData:', activeChatData);
 
+
+const canPin = (msg) => {
+  if (!msg) return false;
+  if (msg.senderId === currentUserId) return true;
+  if (activeChatData?.type === 'channel') {
+    const isAdmin = activeChatData?.members?.some(m => m.userId === currentUserId && m.role === 'admin');
+    if (isAdmin) return true;
+    if (activeChatData?.creatorId === currentUserId) return true;
+  }
+  if (activeChatData?.type === 'group' && activeChatData?.creatorId === currentUserId) return true;
+  return false;
+};
+
   // Заглушки для недостающих функций
-  const pinnedMessages = [];
+  
   const handleMarkAsRead = () => {};
   const handleReactionToggle = () => {};
   const handleThreadReply = () => {};
@@ -290,6 +376,7 @@ console.log('🔍 isReadOnly:', isReadOnly, 'activeChatData:', activeChatData);
           isTyping={isTypingVisible}
           isDataLoading={!activeChatData && activeChatId !== 'chat_general'}
           pinnedCount={pinnedMessages?.length || 0}
+          onTogglePinned={() => setShowPinnedList(!showPinnedList)}
           onToggleProfile={onToggleProfile}
           onBack={() => setActiveChatId(null)}
         />
@@ -310,7 +397,63 @@ console.log('🔍 isReadOnly:', isReadOnly, 'activeChatData:', activeChatData);
           onPin={handlePin}
           onDelete={handleDelete}
         />
-
+{showPinnedList && (
+  <div className="mx-4 my-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/30 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+    <div className="p-3 border-b border-amber-200 dark:border-amber-800/30 flex justify-between items-center">
+      <h4 className="text-sm font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-2">
+        <span>📌</span> Закрепленные сообщения ({pinnedMessages.length})
+      </h4>
+      <button
+        onClick={() => setShowPinnedList(false)}
+        className="text-amber-500 hover:text-amber-700 dark:hover:text-amber-300 transition"
+      >
+        ✕
+      </button>
+    </div>
+    <div className="p-2">
+      {pinnedLoading ? (
+        <div className="text-center py-4 text-zinc-500 dark:text-zinc-400">Загрузка...</div>
+      ) : pinnedMessages.length === 0 ? (
+        <div className="text-center py-4 text-sm text-zinc-400 dark:text-zinc-500">
+          Нет закрепленных сообщений
+        </div>
+      ) : (
+        pinnedMessages.map(msg => (
+          <div
+            key={msg.id}
+            className="p-3 bg-white dark:bg-zinc-900 rounded-lg mb-2 border border-amber-200/50 dark:border-amber-800/20 hover:bg-amber-50/50 dark:hover:bg-amber-950/30 cursor-pointer transition"
+            onClick={() => {
+              const element = document.querySelector(`[data-message-id="${msg.id}"]`);
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                element.classList.add('highlight-animation');
+                setTimeout(() => element.classList.remove('highlight-animation'), 2000);
+              }
+              setShowPinnedList(false);
+            }}
+          >
+            <div className="flex items-start gap-2">
+              <span className="text-amber-500 dark:text-amber-400 text-sm mt-0.5">📌</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    {msg.sender?.username || 'Unknown'}
+                  </span>
+                  <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                    {new Date(msg.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300 mt-1">
+                  {msg.text || '📎 Медиафайл'}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  </div>
+)}
         <MessageInput
   activeChatId={activeChatId}
   socketRef={socketRef}

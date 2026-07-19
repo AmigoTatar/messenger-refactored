@@ -43,6 +43,7 @@ export default function App() {
   // === Рефы для защиты от дублирования ===
   const processedEvents = useRef(new Set());
   const activeChatIdRef = useRef(activeChatId);
+  const pinnedProcessingRef = useRef(new Set());
   
 
 // Синхронизация activeChatData при изменении channels или groupChats
@@ -394,9 +395,16 @@ const handleUnreadUpdated = useCallback((data) => {
 
   // --- 11. ЗАКРЕПЛЕНИЕ ---
 const handlePin = useCallback(async (messageId) => {
-  // Если messageId — объект, извлекаем id
   const id = typeof messageId === 'object' ? messageId.messageId || messageId.id : messageId;
   console.log('📌 Закрепление сообщения:', id);
+
+  // Защита от повторных запросов
+  if (pinnedProcessingRef.current.has(id)) {
+    console.log('⏳ Закрепление уже в процессе, пропускаю');
+    return;
+  }
+  pinnedProcessingRef.current.add(id);
+
   try {
     const token = localStorage.getItem('token');
     const response = await fetch(`${API_BASE_URL}/api/messages/${id}/pin`, {
@@ -420,6 +428,10 @@ const handlePin = useCallback(async (messageId) => {
     });
   } catch (error) {
     console.error('Ошибка закрепления:', error);
+  } finally {
+    setTimeout(() => {
+      pinnedProcessingRef.current.delete(id);
+    }, 500);
   }
 }, [setMessagesByChat]);
 
@@ -530,9 +542,23 @@ const handleChannelMemberAdded = useCallback((data) => {
   };
 
   // --- 17. СТАТУС ПРОЧТЕНИЯ ---
-  const handleMessagesReadUpdate = ({ activeChatId: readChatId }) => {
-    // Можно обновить статусы сообщений или просто перезапросить непрочитанные
-  };
+  const handleMessagesReadUpdate = useCallback(({ activeChatId: readChatId, readerId }) => {
+  if (readerId === user?.id) return; // если я прочитал, то не обновляем (это мои сообщения)
+  // Находим все сообщения в этом чате, где senderId === readerId (другой пользователь)
+  // и обновляем их статус на read
+  setMessagesByChat(prev => {
+    const newState = { ...prev };
+    for (const chatId in newState) {
+      if (chatId === readChatId) {
+        newState[chatId] = newState[chatId].map(msg =>
+          msg.senderId === readerId ? { ...msg, status: 'read' } : msg
+        );
+      }
+    }
+    return newState;
+  });
+}, [setMessagesByChat, user]);
+
 
 useEffect(() => {
   if (socket && activeChatId) {
