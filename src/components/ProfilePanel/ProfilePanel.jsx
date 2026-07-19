@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { getAvatarUrl } from '../../utils/avatarUtils';
 import { apiClient } from '../../services/apiClient';
 
-export default function ProfilePanel({ activeChat, isOpen, onClose, socketRef }) {
+export default function ProfilePanel({ activeChat, isOpen, onChatUpdate, onClose, socketRef }) {
   const [activeTab, setActiveTab] = useState('media');
   const [members, setMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -12,6 +12,11 @@ export default function ProfilePanel({ activeChat, isOpen, onClose, socketRef })
   const [selectedUserId, setSelectedUserId] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [isMuteLoading, setIsMuteLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editAvatar, setEditAvatar] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const currentUserId = JSON.parse(localStorage.getItem('user') || '{}').id;
   // Вспомогательная функция для извлечения числового ID из строки с префиксом
@@ -261,6 +266,56 @@ const handleDeleteChat = async () => {
 
   console.log('🔍 ProfilePanel: activeChat.creatorId=', activeChat?.creatorId, 'currentUserId=', currentUserId, 'isCreator=', isCreator)
 
+
+
+const handleSaveEdit = async () => {
+  if (!editName.trim()) {
+    alert('Название не может быть пустым');
+    return;
+  }
+  setIsSaving(true);
+  try {
+    const token = localStorage.getItem('token');
+    let endpoint;
+    if (activeChat.type === 'channel') {
+      const id = activeChat.id.replace('channel_', '');
+      endpoint = `/api/channels/${id}`;
+    } else if (activeChat.type === 'group') {
+      const id = activeChat.id.replace('chat_', '');
+      endpoint = `/api/chats/${id}`;
+    } else {
+      return;
+    }
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: editName.trim(),
+        avatar: editAvatar || activeChat.avatar,
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Ошибка обновления');
+    }
+    const data = await response.json();
+    // Обновить данные в App (передаём через пропс onChatUpdate)
+    if (onChatUpdate) onChatUpdate(data);
+    setIsEditing(false);
+    setEditName('');
+    setEditAvatar('');
+  } catch (error) {
+    console.error('Ошибка обновления:', error);
+    alert('Не удалось обновить: ' + error.message);
+  } finally {
+    setIsSaving(false);
+  }
+};
+
+
   return (
     <div className="w-80 h-full border-l flex flex-col animate-fade-in fixed right-0 top-0 z-50 md:relative md:z-0 shadow-2xl md:shadow-none bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
       <div className="p-4 border-b flex items-center justify-between border-zinc-200 dark:border-zinc-800 bg-white/40 dark:bg-zinc-950/40">
@@ -381,7 +436,18 @@ const handleDeleteChat = async () => {
             <span>🗑️</span> Удалить {activeChat.type === 'channel' ? 'канал' : 'групповой чат'}
           </button>
         )}
-
+{(isCreator || (activeChat.type === 'channel' && isAdmin)) && (
+  <button
+    onClick={() => {
+      setIsEditing(true);
+      setEditName(activeChat.name);
+      setEditAvatar(activeChat.avatar || '');
+    }}
+    className="text-xs text-emerald-400 hover:text-emerald-300 transition"
+  >
+    ✏️ Редактировать
+  </button>
+)}
         <hr className="border-zinc-200 dark:border-zinc-800" />
 
         <div className="flex border-b text-xs border-zinc-200 dark:border-zinc-800">
@@ -423,6 +489,59 @@ const handleDeleteChat = async () => {
           )}
         </div>
       </div>
+      {isEditing && (
+  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-zinc-100 dark:border-zinc-800">
+      <h3 className="text-lg font-bold text-zinc-800 dark:text-white mb-4">
+        Редактировать {activeChat.type === 'channel' ? 'канал' : 'группу'}
+      </h3>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+            Название
+          </label>
+          <input
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-zinc-800 dark:text-white"
+            placeholder="Новое название"
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+            Иконка (эмодзи или URL)
+          </label>
+          <input
+            type="text"
+            value={editAvatar}
+            onChange={(e) => setEditAvatar(e.target.value)}
+            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2.5 text-center text-2xl focus:outline-none focus:border-emerald-500"
+            maxLength={2}
+            placeholder="💬"
+          />
+        </div>
+        <div className="flex justify-end space-x-3 pt-2">
+          <button
+            type="button"
+            onClick={() => setIsEditing(false)}
+            className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={handleSaveEdit}
+            disabled={isSaving || !editName.trim()}
+            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition shadow-md"
+          >
+            {isSaving ? 'Сохранение...' : 'Сохранить'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }

@@ -396,13 +396,10 @@ const handleUnreadUpdated = useCallback((data) => {
   // --- 11. ЗАКРЕПЛЕНИЕ ---
 const handlePin = useCallback(async (messageId) => {
   const id = typeof messageId === 'object' ? messageId.messageId || messageId.id : messageId;
-  console.log('📌 Закрепление сообщения:', id);
+  if (!id) return;
 
-  // Защита от повторных запросов
-  if (pinnedProcessingRef.current.has(id)) {
-    console.log('⏳ Закрепление уже в процессе, пропускаю');
-    return;
-  }
+  // Защита от дублей
+  if (pinnedProcessingRef.current.has(id)) return;
   pinnedProcessingRef.current.add(id);
 
   try {
@@ -414,9 +411,12 @@ const handlePin = useCallback(async (messageId) => {
         'Content-Type': 'application/json',
       },
     });
-    if (!response.ok) throw new Error('Ошибка закрепления');
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Ошибка закрепления');
+    }
     const data = await response.json();
-    // Обновляем стейт сообщений
+    // Обновляем стейт через setMessagesByChat
     setMessagesByChat(prev => {
       const newState = { ...prev };
       for (const chatId in newState) {
@@ -428,10 +428,9 @@ const handlePin = useCallback(async (messageId) => {
     });
   } catch (error) {
     console.error('Ошибка закрепления:', error);
+    alert('Не удалось закрепить сообщение');
   } finally {
-    setTimeout(() => {
-      pinnedProcessingRef.current.delete(id);
-    }, 500);
+    pinnedProcessingRef.current.delete(id);
   }
 }, [setMessagesByChat]);
 
@@ -496,6 +495,8 @@ const handleChannelMemberAdded = useCallback((data) => {
     });
     return [...updated];
   });
+
+
   
   // ✅ ДОБАВЛЯЕМ ФОРСИРОВАННОЕ ОБНОВЛЕНИЕ
   
@@ -607,7 +608,6 @@ useEffect(() => {
   socket.on('thread_created', handleThreadCreated);
   socket.on('unread_updated', handleUnreadUpdated);
   socket.on('message_edited', handleMessageEdited);
-  socket.on('message_pinned', handlePin);
   socket.on('channel_member_added', handleChannelMemberAdded);
   socket.on('channel_member_removed', handleChannelMemberRemoved);
   socket.on('chat_member_added', handleChatMemberAdded);
@@ -615,7 +615,17 @@ useEffect(() => {
   socket.on('user_updated', handleUserUpdated);
   socket.on('messages_read_update', handleMessagesReadUpdate);
 
-
+socket.on('message_pinned', ({ messageId, isPinned }) => {
+  setMessagesByChat(prev => {
+    const newState = { ...prev };
+    for (const chatId in newState) {
+      newState[chatId] = newState[chatId].map(msg =>
+        msg.id === messageId ? { ...msg, isPinned } : msg
+      );
+    }
+    return newState;
+  });
+});
 
 
 
@@ -649,7 +659,6 @@ useEffect(() => {
     socket.off('thread_created', handleThreadCreated);
     socket.off('unread_updated', handleUnreadUpdated);
     socket.off('message_edited', handleMessageEdited);
-    socket.off('message_pinned', handlePin);
     socket.off('channel_member_added', handleChannelMemberAdded);
     socket.off('channel_member_removed', handleChannelMemberRemoved);
     socket.off('chat_member_added', handleChatMemberAdded);
@@ -657,6 +666,7 @@ useEffect(() => {
     socket.off('user_updated', handleUserUpdated);
     socket.off('messages_read_update', handleMessagesReadUpdate);
     socket.off('kicked_from_channel');
+    socket.off('message_pinned');
 
     
   };
@@ -914,6 +924,24 @@ console.log('🔁 activeMessages обновлён:', activeMessages.length);
       ...prev,
       members: [...(prev?.members || []), newMember]
     }));
+  }}
+   onChatUpdate={(updated) => {
+    if (updated.type === 'channel') {
+      setChannels(prev => prev.map(ch =>
+        ch.id === updated.id ? updated : ch
+      ));
+      // Если этот канал активен, обновляем activeChatData
+      if (activeChatId === `channel_${updated.id}`) {
+        setActiveChatData(prev => ({ ...prev, name: updated.name, avatar: updated.avatar }));
+      }
+    } else if (updated.type === 'group') {
+      setGroupChats(prev => prev.map(ch =>
+        ch.dbId === updated.id ? { ...ch, name: updated.name, avatar: updated.avatar } : ch
+      ));
+      if (activeChatId === `chat_${updated.id}`) {
+        setActiveChatData(prev => ({ ...prev, name: updated.name, avatar: updated.avatar }));
+      }
+    }
   }}
         />
       </div>

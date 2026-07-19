@@ -117,11 +117,45 @@ const handleForwardSend = (targetChatId, msg) => {
 
   const handlePin = async (messageId) => {
   console.log('📌 Закрепление:', messageId);
-  // Если messageId — объект, берём id
   const id = typeof messageId === 'object' ? messageId.id : messageId;
-  if (onPinMessage) onPinMessage(id);
+  
+  // ✅ Проверка прав на клиенте
+  const msg = messages.find(m => m.id === id);
+  if (!msg) return;
+  
+  // Автор всегда может закрепить
+  if (msg.senderId !== currentUserId) {
+    // Для каналов: проверяем админа или создателя
+    if (activeChatData?.type === 'channel') {
+      const isAdmin = activeChatData?.members?.some(m => m.userId === currentUserId && m.role === 'admin');
+      const isCreator = activeChatData?.creatorId === currentUserId;
+      if (!isAdmin && !isCreator) {
+        alert('❌ Вы не можете закрепить это сообщение');
+        return;
+      }
+    } else if (activeChatData?.type === 'group') {
+      if (activeChatData?.creatorId !== currentUserId) {
+        alert('❌ Только создатель группы может закреплять сообщения');
+        return;
+      }
+    } else {
+      // Приватный чат: только автор
+      alert('❌ Вы можете закреплять только свои сообщения');
+      return;
+    }
+  }
+  
+  if (onPinMessage) {
+    try {
+      await onPinMessage(id);
+      await fetchPinnedMessages();
+    } catch (error) {
+      console.error('Ошибка закрепления:', error);
+      // Не вызываем повторно
+    }
+  }
 };
-
+// ==============================================
   const handleDelete = (messageId) => {
     if (onDeleteMessage) onDeleteMessage(messageId);
   };
