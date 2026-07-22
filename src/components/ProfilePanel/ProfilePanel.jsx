@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { getAvatarUrl } from '../../utils/avatarUtils';
 import { apiClient } from '../../services/apiClient';
-
+import { API_BASE_URL } from '../../config';
 export default function ProfilePanel({ activeChat, isOpen, onChatUpdate, onClose, socketRef }) {
   const [activeTab, setActiveTab] = useState('media');
   const [members, setMembers] = useState([]);
@@ -17,6 +17,11 @@ export default function ProfilePanel({ activeChat, isOpen, onChatUpdate, onClose
   const [editAvatar, setEditAvatar] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [newName, setNewName] = useState(activeChat?.name || '');
+  
 
   const currentUserId = JSON.parse(localStorage.getItem('user') || '{}').id;
   // Вспомогательная функция для извлечения числового ID из строки с префиксом
@@ -151,6 +156,49 @@ const getNumericId = (chatId) => {
   }
 };
 
+
+
+const handleUpdateChat = async (e) => {
+  e.preventDefault();
+  const formData = new FormData();
+  formData.append('name', newName);
+  if (avatarFile) {
+    formData.append('avatar', avatarFile);
+  }
+
+  try {
+    const token = localStorage.getItem('token');
+    const chatId = activeChat?.id; // предполагаем, что activeChat.id - это числовой ID
+    const url = activeChat?.type === 'channel' 
+      ? `${API_BASE_URL}/api/channels/${chatId}`
+      : `${API_BASE_URL}/api/chats/${chatId}`;
+    
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // Не ставим Content-Type для FormData, браузер установит сам с boundary
+      },
+      body: formData,
+    });
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.error || 'Ошибка обновления');
+    }
+    const updated = await res.json();
+    // Обновить через проп onChatUpdate
+    if (typeof onChatUpdate === 'function') {
+      onChatUpdate({ ...updated, type: activeChat?.type });
+    }
+    setEditMode(false);
+    // Можно также обновить локальное состояние activeChat, если нужно
+    // например, setActiveChat(prev => ({ ...prev, name: updated.name, avatar: updated.avatar }));
+  } catch (err) {
+    alert('Не удалось обновить: ' + err.message);
+  }
+};
+
+
   // ==============================================
   // Добавление участника
   // ==============================================
@@ -220,6 +268,26 @@ const handleRemoveMember = async (userId) => {
     }
   } catch (err) {
     console.error('Ошибка удаления:', err);
+  }
+};
+
+const handleLeaveGroup = async () => {
+  if (!confirm('Вы уверены, что хотите покинуть группу?')) return;
+  try {
+    const token = localStorage.getItem('token');
+    const chatId = activeChat.id;
+    const numericId = getNumericId(chatId);
+    if (!numericId) return;
+    await apiClient(`/api/chats/${numericId}/members/${currentUserId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    // Закрыть профиль и переключиться на общий чат
+    onClose();
+    // Также нужно удалить чат из списка (это сделает сервер через socket)
+  } catch (err) {
+    console.error('Ошибка выхода из группы:', err);
+    alert('Не удалось покинуть группу');
   }
 };
 
@@ -315,6 +383,18 @@ const handleSaveEdit = async () => {
   }
 };
 
+const handleAvatarChange = (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAvatarPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
 
   return (
     <div className="w-80 h-full border-l flex flex-col animate-fade-in fixed right-0 top-0 z-50 md:relative md:z-0 shadow-2xl md:shadow-none bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
@@ -332,14 +412,37 @@ const handleSaveEdit = async () => {
               <span>{activeChat.avatar || '💬'}</span>
             )}
           </div>
-          <h2 className="font-bold text-lg text-zinc-900 dark:text-white">{activeChat.name}</h2>
+          <h2 className="font-bold text-lg text-zinc-900 dark:text-white flex items-center gap-2">
+  {activeChat.name}
+  {(isCreator || (activeChat.type === 'channel' && isAdmin)) && (
+    <button
+      onClick={() => setEditMode(true)}
+      className="text-sm text-emerald-400 hover:text-emerald-300 transition"
+      title="Редактировать"
+    >
+      ✏️
+    </button>
+  )}
+</h2>
           <span className="text-xs text-zinc-500 dark:text-zinc-400">
             {activeChat.type === 'channel' ? '📢 Канал' :
              activeChat.type === 'group' ? '👥 Групповой чат' : '💬 Чат'}
           </span>
         </div>
 
+        
+
         <hr className="border-zinc-200 dark:border-zinc-800" />
+
+        {/* Кнопка выхода из группы для обычных участников */}
+{activeChat.type === 'group' && !isCreator && (
+  <button
+    onClick={handleLeaveGroup}
+    className="w-full py-2 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl text-sm font-medium transition flex items-center justify-center gap-2"
+  >
+    <span>🚪</span> Покинуть группу
+  </button>
+)}
 
         {(activeChat.id?.startsWith('channel_') || activeChat.id?.startsWith('chat_')) && (
           <div>
@@ -351,6 +454,8 @@ const handleSaveEdit = async () => {
                 </button>
               )}
             </div>
+
+            
 
             {showAddMember && (
               <div className="mb-3 p-3 rounded-lg bg-zinc-100 dark:bg-zinc-900">
@@ -448,6 +553,8 @@ const handleSaveEdit = async () => {
     ✏️ Редактировать
   </button>
 )}
+
+
         <hr className="border-zinc-200 dark:border-zinc-800" />
 
         <div className="flex border-b text-xs border-zinc-200 dark:border-zinc-800">
