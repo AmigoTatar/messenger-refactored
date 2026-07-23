@@ -493,19 +493,16 @@ const handleChannelMemberAdded = useCallback((data) => {
       }
       return ch;
     });
+    // ✅ ДОБАВЬ ЭТУ СТРОКУ:
+    setGroupChatsVersion(prev => prev + 1);
     return [...updated];
   });
 
-
-  
-  // ✅ ДОБАВЛЯЕМ ФОРСИРОВАННОЕ ОБНОВЛЕНИЕ
-  
-  setGroupChatsVersion(prev => prev + 1);
-  
   if (data.member?.userId === user?.id) {
     joinChat(`chat_${data.chatId}`);
   }
 }, [setGroupChats, user, joinChat]);
+
 // --- 15. УДАЛЕНИЕ УЧАСТНИКА ИЗ ГРУППЫ ---
   const handleChatMemberRemoved = (data) => {
   setGroupChats(prev => {
@@ -925,24 +922,25 @@ console.log('🔁 activeMessages обновлён:', activeMessages.length);
       members: [...(prev?.members || []), newMember]
     }));
   }}
-   onChatUpdate={(updated) => {
-    if (updated.type === 'channel') {
-      setChannels(prev => prev.map(ch =>
-        ch.id === updated.id ? updated : ch
-      ));
-      // Если этот канал активен, обновляем activeChatData
-      if (activeChatId === `channel_${updated.id}`) {
-        setActiveChatData(prev => ({ ...prev, name: updated.name, avatar: updated.avatar }));
-      }
-    } else if (updated.type === 'group') {
-      setGroupChats(prev => prev.map(ch =>
-        ch.dbId === updated.id ? { ...ch, name: updated.name, avatar: updated.avatar } : ch
-      ));
-      if (activeChatId === `chat_${updated.id}`) {
-        setActiveChatData(prev => ({ ...prev, name: updated.name, avatar: updated.avatar }));
-      }
+onChatUpdate={(updated) => {
+  console.log('🔥 onChatUpdate получил:', updated);
+
+  if (updated.type === 'channel') {
+    setChannels(prev => prev.map(ch =>
+      ch.id === updated.id ? { ...ch, ...updated } : ch
+    ));
+    if (activeChatId === `channel_${updated.id}`) {
+      setActiveChatData(prev => ({ ...prev, ...updated }));
     }
-  }}
+  } else if (updated.type === 'group') {
+    setGroupChats(prev => prev.map(ch =>
+      ch.dbId === updated.id ? { ...ch, ...updated } : ch
+    ));
+    if (activeChatId === `chat_${updated.id}`) {
+      setActiveChatData(prev => ({ ...prev, ...updated }));
+    }
+  }
+}}
         />
       </div>
     </div>

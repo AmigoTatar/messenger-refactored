@@ -5,31 +5,37 @@ import { apiClient } from '../../services/apiClient';
 import { API_BASE_URL } from '../../config';
 export default function ProfilePanel({ activeChat, isOpen, onChatUpdate, onClose, socketRef }) {
   const [activeTab, setActiveTab] = useState('media');
-  const [members, setMembers] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showAddMember, setShowAddMember] = useState(false);
-  const [allUsers, setAllUsers] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [isMuted, setIsMuted] = useState(false);
-  const [isMuteLoading, setIsMuteLoading] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editAvatar, setEditAvatar] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [avatarFile, setAvatarFile] = useState(null);
-  const [avatarPreview, setAvatarPreview] = useState(null);
-  const [editMode, setEditMode] = useState(false);
-  const [newName, setNewName] = useState(activeChat?.name || '');
-  
+const [members, setMembers] = useState([]);
+const [isLoading, setIsLoading] = useState(false);
+const [showAddMember, setShowAddMember] = useState(false);
+const [allUsers, setAllUsers] = useState([]);
+const [selectedUserId, setSelectedUserId] = useState('');
+const [isMuted, setIsMuted] = useState(false);
+const [isMuteLoading, setIsMuteLoading] = useState(false);
+const [isEditing, setIsEditing] = useState(false);
+const [isSaving, setIsSaving] = useState(false);
+const [newName, setNewName] = useState(activeChat?.name || '');
+const [newAvatar, setNewAvatar] = useState(activeChat?.avatar || ''); 
+const currentUserId = JSON.parse(localStorage.getItem('user') || '{}').id;
+const [avatarFile, setAvatarFile] = useState(null);
+const [avatarPreview, setAvatarPreview] = useState(null);
 
-  const currentUserId = JSON.parse(localStorage.getItem('user') || '{}').id;
   // Вспомогательная функция для извлечения числового ID из строки с префиксом
 const getNumericId = (chatId) => {
   if (!chatId) return null;
   const numeric = parseInt(chatId.replace(/\D/g, ''), 10);
   return isNaN(numeric) ? null : numeric;
 };
+
+
+// Синхронизируем имя в модалке с текущим чатом
+useEffect(() => {
+  if (activeChat) {
+    setNewName(activeChat.name || '');
+    setNewAvatar(activeChat.avatar || '');
+  }
+}, [activeChat]);
+
 
   // ==============================================
   // Загрузка участников и статуса mute
@@ -156,28 +162,42 @@ const getNumericId = (chatId) => {
   }
 };
 
-
-
-const handleUpdateChat = async (e) => {
-  e.preventDefault();
-  const formData = new FormData();
-  formData.append('name', newName);
-  if (avatarFile) {
-    formData.append('avatar', avatarFile);
+const handleAvatarChange = (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setAvatarPreview(reader.result);
+    reader.readAsDataURL(file);
   }
+};
 
+const handleSaveChat = async (e) => {
+  e.preventDefault();
+  setIsSaving(true);
   try {
     const token = localStorage.getItem('token');
-    const chatId = activeChat?.id; // предполагаем, что activeChat.id - это числовой ID
-    const url = activeChat?.type === 'channel' 
-      ? `${API_BASE_URL}/api/channels/${chatId}`
-      : `${API_BASE_URL}/api/chats/${chatId}`;
-    
+    const chatId = activeChat?.id;
+    if (!chatId) throw new Error('ID чата не найден');
+
+    const numericId = getNumericId(chatId);
+    if (!numericId) throw new Error('Некорректный ID');
+
+    const url = activeChat.type === 'channel'
+      ? `${API_BASE_URL}/api/channels/${numericId}`
+      : `${API_BASE_URL}/api/chats/${numericId}`;
+
+    const formData = new FormData();
+    formData.append('name', newName);
+    if (avatarFile) {
+      formData.append('avatar', avatarFile);
+    }
+
     const res = await fetch(url, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
-        // Не ставим Content-Type для FormData, браузер установит сам с boundary
+        // Content-Type не ставим, браузер сам добавит с boundary
       },
       body: formData,
     });
@@ -186,15 +206,16 @@ const handleUpdateChat = async (e) => {
       throw new Error(errorData.error || 'Ошибка обновления');
     }
     const updated = await res.json();
-    // Обновить через проп onChatUpdate
     if (typeof onChatUpdate === 'function') {
-      onChatUpdate({ ...updated, type: activeChat?.type });
+      onChatUpdate({ ...updated, type: activeChat.type });
     }
-    setEditMode(false);
-    // Можно также обновить локальное состояние activeChat, если нужно
-    // например, setActiveChat(prev => ({ ...prev, name: updated.name, avatar: updated.avatar }));
+    setIsEditing(false);
+    setAvatarFile(null);
+    setAvatarPreview(null);
   } catch (err) {
     alert('Не удалось обновить: ' + err.message);
+  } finally {
+    setIsSaving(false);
   }
 };
 
@@ -336,63 +357,14 @@ const handleDeleteChat = async () => {
 
 
 
-const handleSaveEdit = async () => {
-  if (!editName.trim()) {
-    alert('Название не может быть пустым');
-    return;
-  }
-  setIsSaving(true);
-  try {
-    const token = localStorage.getItem('token');
-    let endpoint;
-    if (activeChat.type === 'channel') {
-      const id = activeChat.id.replace('channel_', '');
-      endpoint = `/api/channels/${id}`;
-    } else if (activeChat.type === 'group') {
-      const id = activeChat.id.replace('chat_', '');
-      endpoint = `/api/chats/${id}`;
-    } else {
-      return;
-    }
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: editName.trim(),
-        avatar: editAvatar || activeChat.avatar,
-      }),
-    });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Ошибка обновления');
-    }
-    const data = await response.json();
-    // Обновить данные в App (передаём через пропс onChatUpdate)
-    if (onChatUpdate) onChatUpdate(data);
-    setIsEditing(false);
-    setEditName('');
-    setEditAvatar('');
-  } catch (error) {
-    console.error('Ошибка обновления:', error);
-    alert('Не удалось обновить: ' + error.message);
-  } finally {
-    setIsSaving(false);
-  }
-};
 
-const handleAvatarChange = (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    setAvatarFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setAvatarPreview(reader.result);
-    };
-    reader.readAsDataURL(file);
-  }
+
+
+
+const openEditModal = () => {
+  setNewName(activeChat.name || '');
+  setNewAvatar(activeChat.avatar || '');
+  setIsEditing(true);
 };
 
 
@@ -404,31 +376,30 @@ const handleAvatarChange = (e) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar text-zinc-800 dark:text-zinc-200">
+        
         <div className="flex flex-col items-center text-center space-y-3">
-          <div className="w-24 h-24 rounded-full flex items-center justify-center text-5xl shadow-lg border-2 overflow-hidden bg-zinc-100 dark:bg-zinc-800 border-zinc-300/50 dark:border-zinc-700/50">
-            {activeChat.avatar?.startsWith('/uploads/') ? (
-              <img src={getAvatarUrl(activeChat.avatar)} alt={activeChat.name} className="w-full h-full object-cover" />
-            ) : (
-              <span>{activeChat.avatar || '💬'}</span>
-            )}
-          </div>
-          <h2 className="font-bold text-lg text-zinc-900 dark:text-white flex items-center gap-2">
-  {activeChat.name}
-  {(isCreator || (activeChat.type === 'channel' && isAdmin)) && (
-    <button
-      onClick={() => setEditMode(true)}
-      className="text-sm text-emerald-400 hover:text-emerald-300 transition"
-      title="Редактировать"
-    >
-      ✏️
-    </button>
-  )}
-</h2>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
-            {activeChat.type === 'channel' ? '📢 Канал' :
-             activeChat.type === 'group' ? '👥 Групповой чат' : '💬 Чат'}
-          </span>
-        </div>
+  <div className="w-24 h-24 rounded-full flex items-center justify-center text-5xl shadow-lg border-2 overflow-hidden bg-zinc-100 dark:bg-zinc-800 border-zinc-300/50 dark:border-zinc-700/50">
+    {activeChat.avatar?.startsWith('/uploads/') ? (
+      <img src={getAvatarUrl(activeChat.avatar)} alt={activeChat.name} className="w-full h-full object-cover" />
+    ) : (
+      <span>{activeChat.avatar || '💬'}</span>
+    )}
+  </div>
+  <h2 className="font-bold text-lg text-zinc-900 dark:text-white">
+    {activeChat.name}
+  </h2>
+  <button
+    onClick={openEditModal}
+    className="text-sm text-emerald-400 hover:text-emerald-300 transition"
+    title="Редактировать"
+  >
+    ✏️
+  </button>
+  <span className="text-xs text-zinc-500 dark:text-zinc-400">
+    {activeChat.type === 'channel' ? '📢 Канал' :
+     activeChat.type === 'group' ? '👥 Групповой чат' : '💬 Чат'}
+  </span>
+</div>
 
         
 
@@ -541,18 +512,7 @@ const handleAvatarChange = (e) => {
             <span>🗑️</span> Удалить {activeChat.type === 'channel' ? 'канал' : 'групповой чат'}
           </button>
         )}
-{(isCreator || (activeChat.type === 'channel' && isAdmin)) && (
-  <button
-    onClick={() => {
-      setIsEditing(true);
-      setEditName(activeChat.name);
-      setEditAvatar(activeChat.avatar || '');
-    }}
-    className="text-xs text-emerald-400 hover:text-emerald-300 transition"
-  >
-    ✏️ Редактировать
-  </button>
-)}
+
 
 
         <hr className="border-zinc-200 dark:border-zinc-800" />
@@ -602,50 +562,57 @@ const handleAvatarChange = (e) => {
       <h3 className="text-lg font-bold text-zinc-800 dark:text-white mb-4">
         Редактировать {activeChat.type === 'channel' ? 'канал' : 'группу'}
       </h3>
-      <div className="space-y-4">
+      <form onSubmit={handleSaveChat} className="space-y-4">
         <div>
           <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
             Название
           </label>
           <input
             type="text"
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
             className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2.5 text-sm focus:outline-none focus:border-emerald-500 text-zinc-800 dark:text-white"
             placeholder="Новое название"
+            required
             autoFocus
           />
         </div>
+        
         <div>
-          <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
-            Иконка (эмодзи или URL)
-          </label>
-          <input
-            type="text"
-            value={editAvatar}
-            onChange={(e) => setEditAvatar(e.target.value)}
-            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-2.5 text-center text-2xl focus:outline-none focus:border-emerald-500"
-            maxLength={2}
-            placeholder="💬"
-          />
-        </div>
+  <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+    Аватар (загрузите изображение)
+  </label>
+  <input
+    type="file"
+    accept="image/*"
+    onChange={handleAvatarChange}
+    className="w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 dark:file:bg-zinc-800 dark:file:text-emerald-400"
+  />
+  {avatarPreview && (
+    <div className="mt-2 flex justify-center">
+      <img src={avatarPreview} alt="Preview" className="w-20 h-20 rounded-full object-cover border-2 border-emerald-500" />
+    </div>
+  )}
+</div>
         <div className="flex justify-end space-x-3 pt-2">
           <button
             type="button"
-            onClick={() => setIsEditing(false)}
+            onClick={() => {
+              setIsEditing(false);
+            }}
             className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition"
           >
             Отмена
           </button>
           <button
-            onClick={handleSaveEdit}
-            disabled={isSaving || !editName.trim()}
+            type="submit"
+            disabled={isSaving || !newName.trim()}
             className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition shadow-md"
           >
             {isSaving ? 'Сохранение...' : 'Сохранить'}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   </div>
 )}
