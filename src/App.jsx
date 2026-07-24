@@ -482,26 +482,74 @@ const handleChannelMemberAdded = useCallback((data) => {
   };
 
   // --- 14. ДОБАВЛЕНИЕ УЧАСТНИКА В ГРУППУ ---
- const handleChatMemberAdded = useCallback((data) => {
+const handleChatMemberAdded = useCallback((data) => {
+ console.log('📥 [handleChatMemberAdded] data:', data);
+  console.log('📥 current groupChats:', groupChats);
+
   setGroupChats(prev => {
-    const updated = prev.map(ch => {
-      const chatId = ch.id?.toString() || `chat_${ch.dbId}`;
-      if (chatId === `chat_${data.chatId}` || ch.dbId === data.chatId) {
-        const exists = ch.members?.some(m => m.userId === data.member.userId);
-        if (exists) return ch;
-        return { ...ch, members: [...(ch.members || []), data.member] };
-      }
-      return ch;
-    });
-    // ✅ ДОБАВЬ ЭТУ СТРОКУ:
+    console.log('📥 prev groupChats:', prev);
+    let updated = [...prev];
+    const exists = updated.some(ch => ch.dbId === data.chatId || ch.id === `chat_${data.chatId}`);
+    
+    if (!exists) {
+      // ✅ Добавляем группу, если её нет
+      const newGroup = {
+        id: `chat_${data.chatId}`,
+        dbId: data.chatId,
+        name: data.chatName || 'Групповой чат',
+        avatar: data.chatAvatar || '💬',  // ← используем переданную аватарку
+        members: data.member ? [data.member] : [],
+        lastMessage: null,
+        creatorId: null,
+      };
+      console.log('📥 Добавлена новая группа:', newGroup);
+      updated = [...updated, newGroup];
+      console.log('📥 [handleChatMemberAdded] Добавлена новая группа:', newGroup);
+    } else {
+      // ✅ Обновляем существующую группу: добавляем участника + обновляем имя и аватарку
+      updated = updated.map(ch => {
+        const chatId = ch.id?.toString() || `chat_${ch.dbId}`;
+        if (chatId === `chat_${data.chatId}` || ch.dbId === data.chatId) {
+          const exists = ch.members?.some(m => m.userId === data.member?.userId);
+          if (exists) return ch;
+          return {
+            ...ch,
+            name: data.chatName || ch.name,
+            avatar: data.chatAvatar || ch.avatar,  // ← обновляем аватарку
+            members: [...(ch.members || []), data.member]
+          };
+        }
+        return ch;
+      });
+    }
+
     setGroupChatsVersion(prev => prev + 1);
-    return [...updated];
+    return updated;
   });
+
+  // Если чат активен, обновляем activeChatData
+  if (activeChatId === `chat_${data.chatId}`) {
+    setActiveChatData(prev => {
+      const exists = prev?.members?.some(m => m.userId === data.member?.userId);
+      if (exists) return prev;
+      return {
+        ...prev,
+        name: data.chatName || prev?.name,
+        avatar: data.chatAvatar || prev?.avatar,  // ← обновляем аватарку
+        members: [...(prev?.members || []), data.member]
+      };
+    });
+  }
 
   if (data.member?.userId === user?.id) {
     joinChat(`chat_${data.chatId}`);
   }
-}, [setGroupChats, user, joinChat]);
+  if (data.member?.userId === user?.id) {
+    joinChat(`chat_${data.chatId}`);
+    // ✅ Загружаем историю для нового чата
+    loadHistory(`chat_${data.chatId}`);
+}
+}, [setGroupChats, user, joinChat, activeChatId, setActiveChatData]);
 
 // --- 15. УДАЛЕНИЕ УЧАСТНИКА ИЗ ГРУППЫ ---
   const handleChatMemberRemoved = (data) => {
@@ -640,7 +688,33 @@ socket.on('message_pinned', ({ messageId, isPinned }) => {
     }
   });
 
+socket.on('channel_updated', (data) => {
+  // Обновляем каналы
+  setChannels(prev => prev.map(ch => 
+    ch.id === data.id ? data : ch
+  ));
+  if (activeChatId === `channel_${data.id}`) {
+    setActiveChatData(prev => ({
+      ...prev,
+      name: data.name,
+      avatar: data.avatar
+    }));
+  }
+});
 
+socket.on('chat_updated', (data) => {
+  // Обновляем группы
+  setGroupChats(prev => prev.map(ch => 
+    ch.dbId === data.id ? { ...ch, name: data.name, avatar: data.avatar } : ch
+  ));
+  if (activeChatId === `chat_${data.id}`) {
+    setActiveChatData(prev => ({
+      ...prev,
+      name: data.name,
+      avatar: data.avatar
+    }));
+  }
+});
 
   // ==============================================
   // 🧹 ОТПИСЫВАЕМСЯ ПРИ РАЗМОНТИРОВАНИИ
@@ -814,6 +888,32 @@ const handleCreateGroupChat = useCallback(async (chatData) => {
 
 
 
+const handleChatUpdate = useCallback((updated) => {
+  if (updated.type === 'channel') {
+    setChannels(prev => prev.map(ch => 
+      ch.id === updated.id ? updated : ch
+    ));
+    if (activeChatId === `channel_${updated.id}`) {
+      setActiveChatData(prev => ({
+        ...prev,
+        name: updated.name,
+        avatar: updated.avatar
+      }));
+    }
+  } else if (updated.type === 'group') {
+    setGroupChats(prev => prev.map(ch => 
+      ch.dbId === updated.id ? { ...ch, name: updated.name, avatar: updated.avatar } : ch
+    ));
+    if (activeChatId === `chat_${updated.id}`) {
+      setActiveChatData(prev => ({
+        ...prev,
+        name: updated.name,
+        avatar: updated.avatar
+      }));
+    }
+  }
+}, [setChannels, setGroupChats, activeChatId, setActiveChatData]);
+
 
   // === Отправка сообщения ===
   const handleSendMessage = useCallback((text, mediaUrl = null, mediaType = null) => {
@@ -914,11 +1014,11 @@ console.log('🔁 activeMessages обновлён:', activeMessages.length);
           isOpen={isProfileOpen}
           onClose={() => setIsProfileOpen(false)}
           socketRef={socket}
-          onMemberRemoved={() => {}} // опционально
-          onChatDeleted={() => {}}   // опционально
+          onMemberRemoved={() => {}} 
+          onChatDeleted={() => {}}   
+          onChatUpdate={handleChatUpdate}
           onMemberAdded={(newMember) => {
-    setActiveChatData(prev => ({
-      ...prev,
+          setActiveChatData(prev => ({ ...prev,
       members: [...(prev?.members || []), newMember]
     }));
   }}
@@ -938,6 +1038,31 @@ onChatUpdate={(updated) => {
     ));
     if (activeChatId === `chat_${updated.id}`) {
       setActiveChatData(prev => ({ ...prev, ...updated }));
+    }
+  }
+}}      
+      onChatUpdate={(updated) => {
+  if (updated.type === 'channel') {
+    setChannels(prev => prev.map(ch => 
+      ch.id === updated.id ? updated : ch
+    ));
+    if (activeChatId === `channel_${updated.id}`) {
+      setActiveChatData(prev => ({
+        ...prev,
+        name: updated.name,
+        avatar: updated.avatar
+      }));
+    }
+  } else if (updated.type === 'group') {
+    setGroupChats(prev => prev.map(ch => 
+      ch.dbId === updated.id ? { ...ch, name: updated.name, avatar: updated.avatar } : ch
+    ));
+    if (activeChatId === `chat_${updated.id}`) {
+      setActiveChatData(prev => ({
+        ...prev,
+        name: updated.name,
+        avatar: updated.avatar
+      }));
     }
   }
 }}

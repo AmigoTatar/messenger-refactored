@@ -4,7 +4,7 @@ import { getAvatarUrl } from '../../utils/avatarUtils';
 import { apiClient } from '../../services/apiClient';
 import { API_BASE_URL } from '../../config';
 export default function ProfilePanel({ activeChat, isOpen, onChatUpdate, onClose, socketRef }) {
-  const [activeTab, setActiveTab] = useState('media');
+const [activeTab, setActiveTab] = useState('media');
 const [members, setMembers] = useState([]);
 const [isLoading, setIsLoading] = useState(false);
 const [showAddMember, setShowAddMember] = useState(false);
@@ -19,6 +19,8 @@ const [newAvatar, setNewAvatar] = useState(activeChat?.avatar || '');
 const currentUserId = JSON.parse(localStorage.getItem('user') || '{}').id;
 const [avatarFile, setAvatarFile] = useState(null);
 const [avatarPreview, setAvatarPreview] = useState(null);
+const [editName, setEditName] = useState('');
+const [editAvatar, setEditAvatar] = useState('');
 
   // Вспомогательная функция для извлечения числового ID из строки с префиксом
 const getNumericId = (chatId) => {
