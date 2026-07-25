@@ -293,7 +293,7 @@ const handleRemoveMember = async (userId) => {
     console.error('Ошибка удаления:', err);
   }
 };
-
+// Покинуть группу
 const handleLeaveGroup = async () => {
   if (!confirm('Вы уверены, что хотите покинуть группу?')) return;
   try {
@@ -313,7 +313,26 @@ const handleLeaveGroup = async () => {
     alert('Не удалось покинуть группу');
   }
 };
-
+// Покинуть канал
+const handleLeaveChannel = async () => {
+  if (!confirm('Вы уверены, что хотите покинуть канал?')) return;
+  try {
+    const token = localStorage.getItem('token');
+    const chatId = activeChat.id;
+    const numericId = getNumericId(chatId);
+    if (!numericId) return;
+    await apiClient(`/api/channels/${numericId}/members/${currentUserId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    // Закрыть профиль и переключиться на общий чат
+    onClose();
+    // Удаляем канал из списка (сервер пришлёт событие через socket)
+  } catch (err) {
+    console.error('Ошибка выхода из канала:', err);
+    alert('Не удалось покинуть канал');
+  }
+};
   // ==============================================
   // Удаление чата/канала
   // ==============================================
@@ -414,6 +433,15 @@ const openEditModal = () => {
     className="w-full py-2 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl text-sm font-medium transition flex items-center justify-center gap-2"
   >
     <span>🚪</span> Покинуть группу
+  </button>
+)}
+{/* Кнопка выхода из канала для обычных участников */}
+{activeChat.type === 'channel' && !isCreator && (
+  <button
+    onClick={handleLeaveChannel}
+    className="w-full py-2 px-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl text-sm font-medium transition flex items-center justify-center gap-2"
+  >
+    <span>🚪</span> Покинуть канал
   </button>
 )}
 

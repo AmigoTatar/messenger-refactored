@@ -1058,7 +1058,7 @@ console.log('🔁 activeMessages обновлён:', activeMessages.length);
           onLogout={handleLogout}
           user={user}
           onUpdateUser={(u) => { localStorage.setItem('user', JSON.stringify(u)); setUser(u); }}
-          formatMsgTime={(d) => d ? new Date(d).toLocaleTimeString() : ''}
+          formatMsgTime={(d) => d ? new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
         />
 <MessageContext.Provider value={{ sendMessage: handleSendMessage }}>
         <ChatArea

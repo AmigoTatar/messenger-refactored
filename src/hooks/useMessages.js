@@ -13,12 +13,17 @@ export function useMessages(currentUserId) {
         return messagesByChat[chatId] || [];
     }, [messagesByChat]);
 
+    // Вспомогательная функция сортировки
+    const sortMessages = (msgs) => {
+        return [...msgs].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    };
+
     const addMessage = useCallback((chatId, message) => {
         setMessagesByChat(prev => {
             const current = prev[chatId] || [];
-            // Проверяем, нет ли уже такого сообщения
             if (current.some(m => m.id === message.id)) return prev;
-            return {...prev, [chatId]: [...current, message] };
+            const updated = sortMessages([...current, message]);
+            return { ...prev, [chatId]: updated };
         });
     }, []);
 
@@ -28,15 +33,18 @@ export function useMessages(currentUserId) {
             const existingIds = new Set(current.map(m => m.id));
             const uniqueNew = newMessages.filter(m => !existingIds.has(m.id));
             if (uniqueNew.length === 0) return prev;
+
+            // Объединяем и сортируем
             const combined = prepend ? [...uniqueNew, ...current] : [...current, ...uniqueNew];
-            return {...prev, [chatId]: combined };
+            const sorted = sortMessages(combined);
+            return { ...prev, [chatId]: sorted };
         });
     }, []);
 
-    const loadHistory = useCallback(async(chatId, cursorMessageId = null) => {
+    const loadHistory = useCallback(async (chatId, cursorMessageId = null) => {
         if (loadingRef.current[chatId]) return;
         loadingRef.current[chatId] = true;
-        setLoading(prev => ({...prev, [chatId]: true }));
+        setLoading(prev => ({ ...prev, [chatId]: true }));
 
         try {
             let url = `/api/messages?activeChatId=${chatId}`;
@@ -48,33 +56,32 @@ export function useMessages(currentUserId) {
             if (rawMessages.length > 0) {
                 addMessages(chatId, rawMessages, !!cursorMessageId);
             }
-            setHasMore(prev => ({...prev, [chatId]: data.hasMore || false }));
+            setHasMore(prev => ({ ...prev, [chatId]: data.hasMore || false }));
         } catch (err) {
             console.error('Error loading history:', err);
         } finally {
             loadingRef.current[chatId] = false;
-            setLoading(prev => ({...prev, [chatId]: false }));
+            setLoading(prev => ({ ...prev, [chatId]: false }));
         }
     }, [addMessages]);
 
     const markMessageAsRead = useCallback((chatId, messageId) => {
         setMessagesByChat(prev => {
             const updated = (prev[chatId] || []).map(m =>
-                m.id === messageId ? {...m, status: 'read' } : m
+                m.id === messageId ? { ...m, status: 'read' } : m
             );
-            return {...prev, [chatId]: updated };
+            return { ...prev, [chatId]: updated };
         });
     }, []);
 
-    // Удаление сообщения (локальное обновление)
     const deleteMessageLocally = useCallback((chatId, messageId) => {
         setMessagesByChat(prev => {
             const updated = (prev[chatId] || []).map(m =>
                 m.id === messageId ?
-                {...m, isDeleted: true, text: 'Сообщение удалено', mediaUrl: null, mediaType: null, reactions: [], threads: [] } :
+                { ...m, isDeleted: true, text: 'Сообщение удалено', mediaUrl: null, mediaType: null, reactions: [], threads: [] } :
                 m
             );
-            return {...prev, [chatId]: updated };
+            return { ...prev, [chatId]: updated };
         });
     }, []);
 
