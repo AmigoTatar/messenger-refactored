@@ -173,15 +173,21 @@ const fetchPinnedMessages = useCallback(async () => {
   try {
     const token = localStorage.getItem('token');
     const params = new URLSearchParams();
+    
     if (activeChatId.startsWith('channel_')) {
       params.append('channelId', activeChatId.replace('channel_', ''));
     } else if (activeChatId.startsWith('chat_')) {
       params.append('chatId', activeChatId.replace('chat_', ''));
+    } else if (activeChatId.startsWith('user_')) {
+      // ✅ Для приватных чатов передаём ID собеседника
+      const otherUserId = activeChatId.replace('user_', '');
+      params.append('privateUserId', otherUserId);
     } else {
       setPinnedMessages([]);
       setPinnedLoading(false);
       return;
     }
+
     const response = await fetch(`${API_BASE_URL}/api/messages/pinned?${params}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
@@ -430,6 +436,7 @@ const canPin = (msg) => {
           onEdit={handleEdit}
           onPin={handlePin}
           onDelete={handleDelete}
+          socketRef={socketRef}
         />
 {showPinnedList && (
   <div className="mx-4 my-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/30 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
@@ -466,6 +473,8 @@ const canPin = (msg) => {
               setShowPinnedList(false);
             }}
           >
+
+
             <div className="flex items-start gap-2">
               <span className="text-amber-500 dark:text-amber-400 text-sm mt-0.5">📌</span>
               <div className="flex-1 min-w-0">

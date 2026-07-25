@@ -1,23 +1,22 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import MessageItem from './MessageItem';
 
-export default function MessageList({ 
-  messages, 
-  currentUserId, 
+export default function MessageList({
+  messages,
+  currentUserId,
   activeChatId,
   onLoadMore,
   hasMore,
   loading,
-  onMarkAsRead,
   onContextMenu,
   onReactionToggle,
   onThreadReply,
   onForward,
   onEdit,
   onPin,
-  onDelete
+  onDelete,
+  socketRef, // новый проп
 }) {
-  // Все хуки в начале
   const containerRef = useRef(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -47,14 +46,14 @@ export default function MessageList({
       isUserScrolledUp.current = false;
       setShowScrollBtn(false);
       setUnreadCount(0);
-      
-      if (distanceFromBottom < 50 && onMarkAsRead && activeChatId && !isMarking.current) {
+
+      // Если доскроллили до низа и есть активный чат, отправляем read_messages через сокет
+      if (distanceFromBottom < 50 && activeChatId && !isMarking.current) {
         isMarking.current = true;
-        const type = activeChatId.startsWith('channel_') ? 'channel' :
-                     activeChatId.startsWith('chat_') ? 'chat' :
-                     activeChatId.startsWith('user_') ? 'private' : null;
-        const id = activeChatId.split('_')[1];
-        if (type && id) onMarkAsRead(type, id);
+        if (socketRef && socketRef.connected) {
+          socketRef.emit('read_messages', { activeChatId });
+          console.log('📤 Отправлено read_messages для чата:', activeChatId);
+        }
         setTimeout(() => { isMarking.current = false; }, 500);
       }
     }
@@ -62,7 +61,7 @@ export default function MessageList({
     if (scrollTop < 40 && !loading && hasMore && onLoadMore) {
       onLoadMore();
     }
-  }, [onLoadMore, loading, hasMore, activeChatId, onMarkAsRead]);
+  }, [onLoadMore, loading, hasMore, activeChatId, socketRef]);
 
   const scrollToBottom = () => {
     if (containerRef.current) {
@@ -73,9 +72,6 @@ export default function MessageList({
     }
   };
 
-  // ==============================================
-  // ⚠️ ЗАЩИТА: если messages не массив — показываем заглушку
-  // ==============================================
   if (!Array.isArray(messages) || messages.length === 0) {
     return (
       <div className="flex-1 overflow-y-auto p-4 text-center text-zinc-500 dark:text-zinc-400 bg-white dark:bg-zinc-950/20 h-full">
@@ -84,46 +80,46 @@ export default function MessageList({
     );
   }
 
- return (
-  <div 
-    ref={containerRef}
-    onScroll={handleScroll}
-    className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar bg-white dark:bg-zinc-950/20"
-  >
-    <div ref={topSensorRef} className="h-1 w-full flex items-center justify-center text-xs text-zinc-500/50">
-      {loading ? '⏳ Загрузка истории...' : ''}
+  return (
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar bg-white dark:bg-zinc-950/20"
+    >
+      <div ref={topSensorRef} className="h-1 w-full flex items-center justify-center text-xs text-zinc-500/50">
+        {loading ? '⏳ Загрузка истории...' : ''}
+      </div>
+
+      {messages.map((msg) => (
+        <MessageItem
+          key={msg.id}
+          msg={msg}
+          currentUserId={currentUserId}
+          onContextMenu={onContextMenu}
+          onReactionToggle={onReactionToggle}
+          onThreadReply={onThreadReply}
+          onForward={onForward}
+          onEdit={onEdit}
+          onPin={onPin}
+          onDelete={onDelete}
+        />
+      ))}
+
+      <div ref={messagesEndRef} className="h-0 w-full" />
+
+      {showScrollBtn && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-24 right-6 w-10 h-10 bg-zinc-800 dark:bg-zinc-700 hover:bg-emerald-600 dark:hover:bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-lg transition-all duration-300 active:scale-95 group z-40"
+        >
+          <span className="text-sm font-bold group-hover:translate-y-0.5 transition-transform duration-200">↓</span>
+          {unreadCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center border border-zinc-900">
+              {unreadCount}
+            </span>
+          )}
+        </button>
+      )}
     </div>
-
-    {messages.map((msg) => (
-      <MessageItem
-        key={msg.id}
-        msg={msg}
-        currentUserId={currentUserId}
-        onContextMenu={onContextMenu}
-        onReactionToggle={onReactionToggle}
-        onThreadReply={onThreadReply}
-        onForward={onForward}
-        onEdit={onEdit}
-        onPin={onPin}
-        onDelete={onDelete}
-      />
-    ))}
-
-    <div ref={messagesEndRef} className="h-0 w-full" />
-
-    {showScrollBtn && (
-      <button 
-        onClick={scrollToBottom}
-        className="absolute bottom-24 right-6 w-10 h-10 bg-zinc-800 dark:bg-zinc-700 hover:bg-emerald-600 dark:hover:bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-lg transition-all duration-300 active:scale-95 group z-40"
-      >
-        <span className="text-sm font-bold group-hover:translate-y-0.5 transition-transform duration-200">↓</span>
-        {unreadCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white text-[10px] font-bold h-5 w-5 rounded-full flex items-center justify-center border border-zinc-900">
-            {unreadCount}
-          </span>
-        )}
-      </button>
-    )}
-  </div>
-);
+  );
 }

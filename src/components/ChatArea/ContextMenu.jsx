@@ -120,11 +120,7 @@ export default function ContextMenu({
       {!isDeleted && (
         <>
           <div className="border-t border-zinc-200 dark:border-zinc-700/50 my-1" />
-          <button
-            onClick={() => {
-              onPin(message.id);
-              onClose();
-            }}
+          <button onClick={() => {onPin(message.id);onClose();}}
             className={`w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition flex items-center gap-3 ${
               message.isPinned ? 'text-amber-500 dark:text-amber-400' : ''
             }`}

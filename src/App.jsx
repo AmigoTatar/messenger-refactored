@@ -218,16 +218,16 @@ const handleChatCreated = useCallback((newChat) => {
   
 
   // --- 5. НОВОЕ СООБЩЕНИЕ ---
- const handleReceiveMessage = (newMessage) => {
+const handleReceiveMessage = (newMessage) => {
   const chatId = getChatIdFromMessage(newMessage, user?.id);
   console.log('📩 Получено сообщение для чата:', chatId, 'Сообщение:', newMessage);
-  
+
   // 📡 Автоматически подписываемся на комнату
   if (chatId && chatId !== 'chat_general') {
     joinChat(chatId);
     console.log('📡 Подписываюсь на комнату из сообщения:', chatId);
   }
-  
+
   const msgKey = `${chatId}_${newMessage.id}`;
   if (processedEvents.current.has(msgKey)) return;
   processedEvents.current.add(msgKey);
@@ -238,30 +238,27 @@ const handleChatCreated = useCallback((newChat) => {
   // ==========================================
   // 🆕 ОБНОВЛЯЕМ lastMessage В СПИСКАХ ЧАТОВ
   // ==========================================
+
+  // === ГРУППОВЫЕ ЧАТЫ ===
   if (chatId.startsWith('chat_')) {
-  const chatDbId = parseInt(chatId.replace('chat_', ''), 10);
-  console.log('🔄 Обновляю lastMessage для группы:', chatDbId, 'Сообщение:', newMessage);
-  
-setGroupChats(prev => {
-  const updated = prev.map(ch => {
-    const id = ch.dbId || parseInt(ch.id?.replace('chat_', ''), 10);
-    if (id === chatDbId) {
-      return { ...ch, lastMessage: newMessage };
-    }
-    return ch;
-  });
-  return [...updated]; // обязательно создаём новый массив
-});
+    const chatDbId = parseInt(chatId.replace('chat_', ''), 10);
+    console.log('🔄 Обновляю lastMessage для группы:', chatDbId, 'Сообщение:', newMessage);
 
- setGroupChatsVersion(prev => {
-    console.log('📊 Увеличиваю groupChatsVersion до:', prev + 1);
-    return prev + 1;
-  });
-}
+    setGroupChats(prev => {
+      const updated = prev.map(ch => {
+        const id = ch.dbId || parseInt(ch.id?.replace('chat_', ''), 10);
+        if (id === chatDbId) {
+          return { ...ch, lastMessage: newMessage };
+        }
+        return ch;
+      });
+      return [...updated];
+    });
 
-   // ==========================================
-  // 🆕 ОБНОВЛЯЕМ lastMessage ДЛЯ КАНАЛОВ
-  // ==========================================
+    setGroupChatsVersion(prev => prev + 1);
+  }
+
+  // === КАНАЛЫ ===
   if (chatId.startsWith('channel_')) {
     const channelId = parseInt(chatId.replace('channel_', ''), 10);
     console.log('🔄 Обновляю lastMessage для канала:', channelId, 'Сообщение:', newMessage);
@@ -272,41 +269,52 @@ setGroupChats(prev => {
         }
         return ch;
       });
-      
-     setChannelsVersion(prevVersion => prevVersion + 1);
-    
-    return [...updated];
-  });
-}
-// ==========================================
-// 🆕 ОБНОВЛЯЕМ lastMessage ДЛЯ ПРИВАТНЫХ ЧАТОВ
-// ==========================================
-if (chatId.startsWith('user_')) {
-  const userId = parseInt(chatId.replace('user_', ''), 10);
-  console.log('🔄 Обновляю lastMessage для приватного чата:', userId, 'Сообщение:', newMessage);
-  setChats(prev => {
-    const updated = prev.map(ch => {
-      const id = ch.dbId || parseInt(ch.id?.replace('user_', ''), 10);
-      if (id === userId) {
-        return { ...ch, lastMessage: newMessage };
+      setChannelsVersion(prev => prev + 1);
+      return [...updated];
+    });
+  }
+
+  // === ПРИВАТНЫЕ ЧАТЫ (исправлено) ===
+  if (chatId.startsWith('user_')) {
+    const userId = parseInt(chatId.replace('user_', ''), 10);
+    console.log('🔄 Обновляю lastMessage для приватного чата:', userId, 'Сообщение:', newMessage);
+
+    // 1. Проверяем, есть ли уже этот чат в списке
+    setChats(prev => {
+      const existing = prev.find(ch => {
+        const id = ch.dbId || parseInt(ch.id?.replace('user_', ''), 10);
+        return id === userId;
+      });
+
+      // Если чата нет – создаём его
+      if (!existing) {
+        const newChat = {
+          id: `user_${userId}`,
+          dbId: userId,
+          name: newMessage.sender?.username || `Пользователь ${userId}`,
+          avatar: newMessage.sender?.avatar || '👤',
+          lastMessage: newMessage,
+          unreadCount: 0,
+          isOnline: false,
+        };
+        return [...prev, newChat];
       }
-      return ch;
+
+      // Если чат есть – обновляем lastMessage
+      return prev.map(ch => {
+        const id = ch.dbId || parseInt(ch.id?.replace('user_', ''), 10);
+        if (id === userId) {
+          return { ...ch, lastMessage: newMessage };
+        }
+        return ch;
+      });
     });
-    setChatsVersion(prev => {
-      console.log('📊 Увеличиваю chatsVersion до:', prev + 1);
-      return prev + 1;
-    });
-    return [...updated];
-  });
-}
 
-  
+    // 2. Увеличиваем версию для перерендера
+    setChatsVersion(prev => prev + 1);
+  }
 
-   // ==========================================
-  // 📊 ОБНОВЛЯЕМ НЕПРОЧИТАННЫЕ (если чат не активен)
-  // ==========================================
-  
-
+  // Звук уведомления (если сообщение не от себя)
   if (String(newMessage.senderId) !== String(user?.id)) {
     playNotificationSound();
   }
@@ -326,6 +334,24 @@ if (chatId.startsWith('user_')) {
       }
       return newState;
     });
+    if (foundChatId.startsWith('chat_')) {
+    setGroupChats(prev => prev.map(ch => {
+      if (ch.id === foundChatId && ch.lastMessage?.id === messageId) {
+        return {
+          ...ch,
+          lastMessage: {
+            ...ch.lastMessage,
+            isDeleted: true,
+            text: 'Сообщение удалено',
+            mediaUrl: null,
+            mediaType: null
+          }
+        };
+      }
+      return ch;
+    }));
+    setGroupChatsVersion(prev => prev + 1); // ✅ Добавляем
+}
   };
 
   // --- 7. ОБНОВЛЕНИЕ РЕАКЦИЙ ---
@@ -482,31 +508,73 @@ const handleChannelMemberAdded = useCallback((data) => {
   };
 
   // --- 14. ДОБАВЛЕНИЕ УЧАСТНИКА В ГРУППУ ---
-const handleChatMemberAdded = useCallback((data) => {
- console.log('📥 [handleChatMemberAdded] data:', data);
-  console.log('📥 current groupChats:', groupChats);
 
+const handleChatMemberAdded = useCallback((data) => {
+  console.log('📥 [handleChatMemberAdded] data:', data);
+
+  // Если в data есть chatData, используем его для полного обновления
+  if (data.chatData) {
+    // Обновляем или добавляем группу в groupChats
+    setGroupChats(prev => {
+      const exists = prev.some(ch => ch.dbId === data.chatData.id || ch.id === `chat_${data.chatData.id}`);
+      if (exists) {
+        // Обновляем существующую группу
+        return prev.map(ch => {
+          if (ch.dbId === data.chatData.id || ch.id === `chat_${data.chatData.id}`) {
+            return {
+              ...ch,
+              name: data.chatData.name,
+              avatar: data.chatData.avatar,
+              members: data.chatData.members || [],
+              lastMessage: data.chatData.lastMessage || null,
+              creatorId: data.chatData.creatorId
+            };
+          }
+          return ch;
+        });
+      } else {
+        // Добавляем новую группу
+        const newGroup = {
+          id: `chat_${data.chatData.id}`,
+          dbId: data.chatData.id,
+          name: data.chatData.name,
+          avatar: data.chatData.avatar,
+          members: data.chatData.members || [],
+          lastMessage: data.chatData.lastMessage || null,
+          creatorId: data.chatData.creatorId,
+        };
+        return [...prev, newGroup];
+      }
+    });
+    // Обновляем activeChatData, если эта группа активна
+    if (activeChatId === `chat_${data.chatData.id}`) {
+      setActiveChatData(prev => ({
+        ...prev,
+        name: data.chatData.name,
+        avatar: data.chatData.avatar,
+        members: data.chatData.members || []
+      }));
+    }
+    setGroupChatsVersion(prev => prev + 1);
+    return;
+  }
+
+  // Старый код (если нет chatData) — оставляем для обратной совместимости
   setGroupChats(prev => {
-    console.log('📥 prev groupChats:', prev);
     let updated = [...prev];
     const exists = updated.some(ch => ch.dbId === data.chatId || ch.id === `chat_${data.chatId}`);
-    
     if (!exists) {
-      // ✅ Добавляем группу, если её нет
       const newGroup = {
         id: `chat_${data.chatId}`,
         dbId: data.chatId,
         name: data.chatName || 'Групповой чат',
-        avatar: data.chatAvatar || '💬',  // ← используем переданную аватарку
+        avatar: data.chatAvatar || '💬',
         members: data.member ? [data.member] : [],
         lastMessage: null,
         creatorId: null,
       };
-      console.log('📥 Добавлена новая группа:', newGroup);
       updated = [...updated, newGroup];
-      console.log('📥 [handleChatMemberAdded] Добавлена новая группа:', newGroup);
     } else {
-      // ✅ Обновляем существующую группу: добавляем участника + обновляем имя и аватарку
       updated = updated.map(ch => {
         const chatId = ch.id?.toString() || `chat_${ch.dbId}`;
         if (chatId === `chat_${data.chatId}` || ch.dbId === data.chatId) {
@@ -515,19 +583,17 @@ const handleChatMemberAdded = useCallback((data) => {
           return {
             ...ch,
             name: data.chatName || ch.name,
-            avatar: data.chatAvatar || ch.avatar,  // ← обновляем аватарку
+            avatar: data.chatAvatar || ch.avatar,
             members: [...(ch.members || []), data.member]
           };
         }
         return ch;
       });
     }
-
     setGroupChatsVersion(prev => prev + 1);
     return updated;
   });
 
-  // Если чат активен, обновляем activeChatData
   if (activeChatId === `chat_${data.chatId}`) {
     setActiveChatData(prev => {
       const exists = prev?.members?.some(m => m.userId === data.member?.userId);
@@ -535,7 +601,7 @@ const handleChatMemberAdded = useCallback((data) => {
       return {
         ...prev,
         name: data.chatName || prev?.name,
-        avatar: data.chatAvatar || prev?.avatar,  // ← обновляем аватарку
+        avatar: data.chatAvatar || prev?.avatar,
         members: [...(prev?.members || []), data.member]
       };
     });
@@ -543,13 +609,9 @@ const handleChatMemberAdded = useCallback((data) => {
 
   if (data.member?.userId === user?.id) {
     joinChat(`chat_${data.chatId}`);
-  }
-  if (data.member?.userId === user?.id) {
-    joinChat(`chat_${data.chatId}`);
-    // ✅ Загружаем историю для нового чата
     loadHistory(`chat_${data.chatId}`);
-}
-}, [setGroupChats, user, joinChat, activeChatId, setActiveChatData]);
+  }
+}, [setGroupChats, user, joinChat, activeChatId, setActiveChatData, loadHistory]);
 
 // --- 15. УДАЛЕНИЕ УЧАСТНИКА ИЗ ГРУППЫ ---
   const handleChatMemberRemoved = (data) => {
@@ -588,17 +650,24 @@ const handleChatMemberAdded = useCallback((data) => {
   };
 
   // --- 17. СТАТУС ПРОЧТЕНИЯ ---
-  const handleMessagesReadUpdate = useCallback(({ activeChatId: readChatId, readerId }) => {
-  if (readerId === user?.id) return; // если я прочитал, то не обновляем (это мои сообщения)
-  // Находим все сообщения в этом чате, где senderId === readerId (другой пользователь)
-  // и обновляем их статус на read
+ const handleMessagesReadUpdate = useCallback(({ activeChatId: readChatId, readerId }) => {
+  // Если читатель - это я, то игнорируем (мы уже обновили локально)
+  if (Number(readerId) === Number(user?.id)) return;
+
+  console.log('📖 [handleMessagesReadUpdate] Чат:', readChatId, 'Прочитал:', readerId);
+
   setMessagesByChat(prev => {
     const newState = { ...prev };
     for (const chatId in newState) {
       if (chatId === readChatId) {
-        newState[chatId] = newState[chatId].map(msg =>
-          msg.senderId === readerId ? { ...msg, status: 'read' } : msg
-        );
+        // Обновляем статус своих сообщений (отправленных мной) в этом чате
+        newState[chatId] = newState[chatId].map(msg => {
+          if (Number(msg.senderId) === Number(user?.id)) {
+            return { ...msg, status: 'read' };
+          }
+          return msg;
+        });
+        break;
       }
     }
     return newState;
@@ -815,12 +884,22 @@ const handleSelectChat = useCallback(async (chatId, chatData = null) => {
     type: 'general' 
   });
   
-  setIsProfileOpen(false);
+   setIsProfileOpen(false);
   if (socket) {
     socket.emit('read_messages', { activeChatId: normalizedChatId });
+    // ✅ Локально помечаем все сообщения от других как прочитанные
+    setMessagesByChat(prev => {
+      const newState = { ...prev };
+      const chatMessages = newState[normalizedChatId];
+      if (chatMessages) {
+        newState[normalizedChatId] = chatMessages.map(msg =>
+          msg.senderId !== user?.id ? { ...msg, status: 'read' } : msg
+        );
+      }
+      return newState;
+    });
   }
-}, [activeChatId, joinChat, resetUnread, loadHistory, channels, groupChats, chats, socket]);
-
+}, [activeChatId, joinChat, resetUnread, loadHistory, channels, groupChats, chats, socket, user]);
 
   // === Функции для создания чатов ===
 
@@ -904,6 +983,8 @@ const handleChatUpdate = useCallback((updated) => {
     setGroupChats(prev => prev.map(ch => 
       ch.dbId === updated.id ? { ...ch, name: updated.name, avatar: updated.avatar } : ch
     ));
+    // ✅ Добавляем увеличение версии для перерисовки сайдбара
+    setGroupChatsVersion(prev => prev + 1);
     if (activeChatId === `chat_${updated.id}`) {
       setActiveChatData(prev => ({
         ...prev,
