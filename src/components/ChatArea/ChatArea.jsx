@@ -252,24 +252,34 @@ const handleReaction = async (messageId, emoji) => {
         alert('❌ Слишком много реакций, подождите');
         return;
       }
-      throw new Error('Ошибка');
+      // Пытаемся прочитать ошибку
+      let errorMsg = 'Ошибка реакции';
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.error || errorMsg;
+      } catch (e) {
+        const text = await response.text();
+        errorMsg = text || errorMsg;
+      }
+      throw new Error(errorMsg);
     }
     const data = await response.json();
     if (setMessages && activeChatId) {
       setMessages(prev => {
         const newState = { ...prev };
         const chatMessages = newState[activeChatId] || [];
-        // ✅ ТОЛЬКО ОБНОВЛЯЕМ РЕАКЦИИ, НЕ ТРОГАЕМ ТЕКСТ!
         newState[activeChatId] = chatMessages.map(m =>
-          m.id === messageId ? { ...m, reactions: data.reactions } : m
+          m.id === messageId ? { ...m, reactions: data.reactions || [] } : m
         );
         return newState;
       });
-    } else {
-      console.warn('setMessages или activeChatId не определены');
     }
   } catch (error) {
     console.error('Ошибка реакции:', error);
+    // Не показываем alert, если это просто 404 или что-то подобное
+    if (!error.message.includes('404')) {
+      alert('Не удалось поставить реакцию: ' + error.message);
+    }
   }
 };
 
@@ -296,17 +306,16 @@ const handleEditSave = async (messageId, newText) => {
         const newState = { ...prev };
         const chatMessages = newState[activeChatId] || [];
         newState[activeChatId] = chatMessages.map(m =>
-          m.id === messageId ? { ...m, text: data.text || newText, edited: true } : m
+          m.id === messageId ? { ...m, text: data.message.text, edited: true } : m
         );
         return newState;
       });
       setEditingMessage(null);
-    } else {
-      console.warn('setMessages или activeChatId не определены');
     }
+    // НЕТ АЛЕРТА ЗДЕСЬ
   } catch (error) {
     console.error('❌ Ошибка редактирования:', error);
-    alert('Не удалось отредактировать сообщение: ' + error.message);
+    /* alert('Не удалось отредактировать сообщение: ' + error.message); // если алерт здесь, он сработает только при ошибке */
   }
 };
 

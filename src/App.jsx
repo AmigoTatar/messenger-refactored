@@ -424,7 +424,6 @@ const handlePin = useCallback(async (messageId) => {
   const id = typeof messageId === 'object' ? messageId.messageId || messageId.id : messageId;
   if (!id) return;
 
-  // Защита от дублей
   if (pinnedProcessingRef.current.has(id)) return;
   pinnedProcessingRef.current.add(id);
 
@@ -438,11 +437,18 @@ const handlePin = useCallback(async (messageId) => {
       },
     });
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Ошибка закрепления');
+      let errorMsg = 'Ошибка закрепления';
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.error || errorMsg;
+      } catch (e) {
+        const text = await response.text();
+        errorMsg = text || errorMsg;
+      }
+      throw new Error(errorMsg);
     }
     const data = await response.json();
-    // Обновляем стейт через setMessagesByChat
+    // Обновляем стейт
     setMessagesByChat(prev => {
       const newState = { ...prev };
       for (const chatId in newState) {
@@ -454,7 +460,10 @@ const handlePin = useCallback(async (messageId) => {
     });
   } catch (error) {
     console.error('Ошибка закрепления:', error);
-    alert('Не удалось закрепить сообщение');
+    // Не показываем alert, если это просто ошибка прав
+    if (!error.message.includes('403') && !error.message.includes('404')) {
+      alert('Не удалось закрепить сообщение: ' + error.message);
+    }
   } finally {
     pinnedProcessingRef.current.delete(id);
   }
@@ -510,7 +519,7 @@ const handleChannelMemberAdded = useCallback((data) => {
   // --- 14. ДОБАВЛЕНИЕ УЧАСТНИКА В ГРУППУ ---
 
 const handleChatMemberAdded = useCallback((data) => {
-  console.log('📥 [handleChatMemberAdded] data:', data);
+  console.log('🔥🔥🔥 Событие chat_member_added пришло!', data);
 
   // Если в data есть chatData, используем его для полного обновления
   if (data.chatData) {
@@ -615,6 +624,7 @@ const handleChatMemberAdded = useCallback((data) => {
 
 // --- 15. УДАЛЕНИЕ УЧАСТНИКА ИЗ ГРУППЫ ---
   const handleChatMemberRemoved = (data) => {
+    console.log('🔥🔥🔥 Событие chat_member_removed пришло!', data);
   setGroupChats(prev => {
     const updated = prev.map(ch => {
       const chatId = ch.id?.toString() || `chat_${ch.dbId}`;
