@@ -390,12 +390,13 @@ const handleUnreadUpdated = useCallback((data) => {
   if (type === 'channel') chatKey = `channel_${id}`;
   else if (type === 'chat') chatKey = `chat_${id}`;
   else if (type === 'private') chatKey = `user_${id}`;
-  
+
   const currentActive = activeChatIdRef.current;
   console.log('📊 [handleUnreadUpdated] chatKey:', chatKey, 'active:', currentActive, 'count:', count);
 
-  if (chatKey === currentActive) {
-    // Если чат активен, сбрасываем счётчик принудительно (на случай, если сервер прислал 1)
+  // Если чат активен и мы не вышли из него (currentActive не null)
+  if (chatKey === currentActive && currentActive !== null) {
+    // Активный чат – сбрасываем счётчик
     console.log('🔄 Сбрасываю unread для активного чата:', chatKey);
     updateUnread(chatKey, 0);
   } else {
@@ -651,13 +652,62 @@ const handleChatMemberAdded = useCallback((data) => {
 };
 
   // --- 16. ОБНОВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ ---
-  const handleUserUpdated = (data) => {
-    if (data.userId === user?.id) {
-      const updatedUser = { ...user, username: data.username, avatar: data.avatar };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+  const handleUserUpdated = useCallback((data) => {
+    const { userId, username, avatar } = data;
+    console.log('🔄 [user_updated] Получено:', data);
+
+    // 1. Если обновился текущий пользователь
+    if (userId === user?.id) {
+        const updatedUser = { ...user, username, avatar };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        console.log('✅ Обновлён текущий пользователь');
     }
-  };
+
+    // 2. Обновляем в списке приватных чатов (chats)
+    setChats(prev => prev.map(ch => {
+        if (ch.dbId === userId) {
+            return { ...ch, name: username, avatar: avatar || ch.avatar };
+        }
+        return ch;
+    }));
+
+    // 3. Обновляем в групповых чатах (как участник)
+    setGroupChats(prev => prev.map(chat => ({
+        ...chat,
+        members: chat.members?.map(m => {
+            if (m.userId === userId) {
+                return { ...m, user: { ...m.user, username, avatar } };
+            }
+            return m;
+        })
+    })));
+
+    // 4. Обновляем в каналах (как участник)
+    setChannels(prev => prev.map(channel => ({
+        ...channel,
+        members: channel.members?.map(m => {
+            if (m.userId === userId) {
+                return { ...m, user: { ...m.user, username, avatar } };
+            }
+            return m;
+        })
+    })));
+
+    // 5. Обновляем в activeChatData (если этот чат открыт)
+    if (activeChatData && activeChatData.type === 'private' && activeChatData.dbId === userId) {
+        setActiveChatData(prev => ({
+            ...prev,
+            name: username,
+            avatar: avatar || prev.avatar
+        }));
+    }
+
+    // 6. Форсируем перерендер списков
+    setChatsVersion(prev => prev + 1);
+    setGroupChatsVersion(prev => prev + 1);
+    setChannelsVersion(prev => prev + 1);
+}, [user, setChats, setGroupChats, setChannels, activeChatData, setActiveChatData]);
 
   // --- 17. СТАТУС ПРОЧТЕНИЯ ---
  const handleMessagesReadUpdate = useCallback(({ activeChatId: readChatId, readerId }) => {
@@ -702,6 +752,7 @@ useEffect(() => {
       setActiveChatId(null);
       setActiveChatData(null);
       setIsProfileOpen(false);
+      activeChatIdRef.current = null;
     }
   };
   window.addEventListener('keydown', handleEsc);
